@@ -41,7 +41,7 @@ app.post('/api/interpretarSonho', async (req, res) => {
         console.log(`[API] Interpretando sonho para usuário ${uid} (Premium: ${premium})`);
 
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-5.1",
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${dreamText}` }
