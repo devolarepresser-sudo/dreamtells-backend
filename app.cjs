@@ -4,6 +4,7 @@ const cors = require('cors');
 const OpenAI = require('openai');
 
 const app = express();
+// >>> ALTERADO AQUI: porta dinâmica para Render <<<
 const port = process.env.PORT || 3000;
 
 // Middleware
@@ -25,61 +26,82 @@ Organize a resposta no formato JSON:
   "symbols": [{"name":"", "meaning":""}],
   "emotions": ["lista de emoções"],
   "lifeAreas": ["áreas da vida mais impactadas"],
-  "advice": "orientação prática e realista"
+  "advice": "orientação prática e realista",
+  "tags": ["tag1", "tag2"],
+  "language": "pt"
 }
 Se o usuário for FREE, gere uma interpretação MAIS CURTA e simplificada.
 Se for PREMIUM, gere interpretação COMPLETA e detalhada.`;
 
-// Handler único para interpretação
-const handleDreamInterpretation = async (req, res) => {
+app.post('/api/interpretarSonho', async (req, res) => {
     try {
-        const { uid, dreamText, premium, textoSonho, text } = req.body;
+        const { uid, dreamText, premium } = req.body;
 
-        // aceita dreamText, textoSonho ou text
-        const finalDreamText = dreamText || textoSonho || text;
-
-        if (!finalDreamText) {
-            return res.status(400).json({
-                success: false,
-                error: 'Texto do sonho é obrigatório.',
-            });
+        if (!dreamText) {
+            return res.status(400).json({ success: false, error: 'Texto do sonho é obrigatório.' });
         }
 
-        console.log(
-            `[API] Interpretando sonho para usuário ${uid} (Premium: ${premium ? 'SIM' : 'NÃO'})`
-        );
+        console.log(`[API] Interpretando sonho para usuário ${uid} (Premium: ${premium})`);
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: "gpt-5.1",
             messages: [
-                { role: 'system', content: SYSTEM_PROMPT },
-                {
-                    role: 'user',
-                    content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${finalDreamText}`,
-                },
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${dreamText}` }
             ],
-            response_format: { type: 'json_object' },
+            response_format: { type: "json_object" },
             temperature: 0.7,
         });
 
         const result = JSON.parse(completion.choices[0].message.content);
 
-        return res.json({
+        res.json({
             success: true,
-            data: result,
+            data: result
         });
+
     } catch (error) {
         console.error('[API Error]', error);
-        return res.status(500).json({
+        res.status(500).json({
             success: false,
-            error: 'Não consegui interpretar seu sonho agora. Tente novamente.',
+            error: 'Não consegui interpretar seu sonho agora. Tente novamente.'
         });
     }
-};
+});
 
-// Duas rotas apontando para o mesmo handler
-app.post('/interpretarSonho', handleDreamInterpretation);
-app.post('/api/interpretarSonho', handleDreamInterpretation);
+app.post('/interpretarSonho', async (req, res) => {
+    try {
+        const { uid, dreamText, premium, text } = req.body;
+
+        const finalText = dreamText || text;
+        if (!finalText) {
+            return res.status(400).json({ error: 'Texto do sonho é obrigatório.' });
+        }
+
+        console.log(`[API] /interpretarSonho chamado para usuário ${uid} (Premium: ${premium})`);
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${finalText}` }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.7,
+        });
+
+        const result = JSON.parse(completion.choices[0].message.content);
+
+        // Rota compatível com o front: retorna o objeto direto
+        return res.json(result);
+
+    } catch (error) {
+        console.error('[API Error /interpretarSonho]', error);
+        return res.status(500).json({
+            error: 'Não consegui interpretar seu sonho agora. Tente novamente.'
+        });
+    }
+});
 
 app.listen(port, () => {
     console.log(`DreamTells Backend rodando em http://localhost:${port}`);
