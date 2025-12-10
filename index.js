@@ -4,7 +4,7 @@ import cors from 'cors';
 
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -48,6 +48,30 @@ app.post('/api/interpretarSonho', async (req, res) => {
         // Return 500 to ensure frontend stub fallback triggers
         res.status(500).json({
             success: false,
+            error: 'Não consegui interpretar seu sonho agora. Tente novamente.'
+        });
+    }
+});
+
+app.post('/interpretarSonho', async (req, res) => {
+    try {
+        const { uid, dreamText, premium, text } = req.body;
+
+        const finalText = dreamText || text;
+        if (!finalText) {
+            return res.status(400).json({ error: 'Texto do sonho é obrigatório.' });
+        }
+
+        console.log(`[API] /interpretarSonho chamado para usuário ${uid} (Premium: ${premium})`);
+
+        const result = await interpretDreamWithGPT5(finalText, uid, premium);
+
+        // Rota compatível com o front: retorna o objeto direto
+        res.json(result);
+
+    } catch (error) {
+        console.error('[API Error /interpretarSonho]', error);
+        res.status(500).json({
             error: 'Não consegui interpretar seu sonho agora. Tente novamente.'
         });
     }
