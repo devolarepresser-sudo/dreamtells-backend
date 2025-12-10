@@ -4,6 +4,7 @@ const cors = require('cors');
 const OpenAI = require('openai');
 
 const app = express();
+// Porta dinâmica para Render (fundamental)
 const port = process.env.PORT || 3000;
 
 // Middleware
@@ -25,23 +26,26 @@ Organize a resposta no formato JSON:
   "symbols": [{"name":"", "meaning":""}],
   "emotions": ["lista de emoções"],
   "lifeAreas": ["áreas da vida mais impactadas"],
-  "advice": "orientação prática e realista"
+  "advice": "orientação prática e realista",
+  "tags": ["tag1", "tag2"],
+  "language": "pt"
 }
 Se o usuário for FREE, gere uma interpretação MAIS CURTA e simplificada.
 Se for PREMIUM, gere interpretação COMPLETA e detalhada.`;
 
+// Rota antiga (mantida por segurança/legado)
 app.post('/api/interpretarSonho', async (req, res) => {
     try {
         const { uid, dreamText, premium } = req.body;
-
         if (!dreamText) {
             return res.status(400).json({ success: false, error: 'Texto do sonho é obrigatório.' });
         }
-
         console.log(`[API] Interpretando sonho para usuário ${uid} (Premium: ${premium})`);
-
+        
+        // Mantendo gpt-5.1 aqui se era o que estava, mas atenção: gpt-5.1 não existe publicamente.
+        // Se der erro, troque por gpt-4o.
         const completion = await openai.chat.completions.create({
-            model: "gpt-5.1",
+            model: "gpt-5.1", 
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${dreamText}` }
@@ -49,18 +53,46 @@ app.post('/api/interpretarSonho', async (req, res) => {
             response_format: { type: "json_object" },
             temperature: 0.7,
         });
+        const result = JSON.parse(completion.choices[0].message.content);
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('[API Error]', error);
+        res.status(500).json({ success: false, error: 'Erro ao interpretar sonho.' });
+    }
+});
+
+// >>> NOVA ROTA CORRIGIDA (compatível com Frontend) <<<
+app.post('/interpretarSonho', async (req, res) => {
+    try {
+        const { uid, dreamText, premium, text } = req.body;
+        
+        // Aceita dreamText ou text (flexibilidade)
+        const finalText = dreamText || text;
+        if (!finalText) {
+            return res.status(400).json({ error: 'Texto do sonho é obrigatório.' });
+        }
+
+        console.log(`[API] /interpretarSonho chamado para usuário ${uid} (Premium: ${premium})`);
+
+        // Usa gpt-4o (modelo válido)
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: `O usuário é ${premium ? 'PREMIUM' : 'FREE'}. O sonho é: ${finalText}` }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.7,
+        });
 
         const result = JSON.parse(completion.choices[0].message.content);
 
-        res.json({
-            success: true,
-            data: result
-        });
+        // Retorna o objeto JSON direto, como o frontend espera
+        return res.json(result);
 
     } catch (error) {
-        console.error('[API Error]', error);
-        res.status(500).json({
-            success: false,
+        console.error('[API Error /interpretarSonho]', error);
+        return res.status(500).json({
             error: 'Não consegui interpretar seu sonho agora. Tente novamente.'
         });
     }
