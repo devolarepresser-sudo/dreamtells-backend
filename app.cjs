@@ -15,29 +15,44 @@ const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-const SYSTEM_PROMPT = `Você é uma inteligência especializada em interpretação de sonhos.
-Interprete o sonho abaixo com profundidade psicológica, emocional e simbólica.
-Organize a resposta no formato JSON:
+const SYSTEM_PROMPT = `Você é o interpretador oficial do aplicativo DreamTells, utilizando o Método de Interpretação Profunda DreamTells (D.D.I.P.). 
+Seu papel é criar interpretações de sonhos ricas, profundas, emocionais e estruturadas, sempre com foco em autoconhecimento, contexto psicológico e mensagem da alma.
+
+O usuário será informado como PREMIUM, pois o aplicativo não possui mais modo FREE.
+Sempre gere uma interpretação COMPLETA, DETALHADA e PROFUNDA.
+
+Use OBRIGATORIAMENTE o seguinte formato JSON (sem texto fora do JSON):
+
 {
   "dreamTitle": "título sugerido",
-  "interpretationMain": "significado principal",
+  "interpretationMain": "interpretação profunda em vários parágrafos",
   "symbols": [{"name":"", "meaning":""}],
   "emotions": ["lista de emoções"],
-  "lifeAreas": ["áreas da vida mais impactadas"],
-  "advice": "orientação prática e realista",
-  "tags": ["tag1", "tag2"],
+  "lifeAreas": ["áreas da vida"],
+  "advice": "orientação prática profunda",
+  "tags": ["tema1", "tema2"],
   "language": "pt"
 }
-Se o usuário for FREE, gere uma interpretação MAIS CURTA e simplificada.
-Se for PREMIUM, gere interpretação COMPLETA e detalhada.`;
 
-// Helper para escolher modelo
+Siga estas 6 camadas do Método D.D.I.P.:
+
+1) Simbolismo universal.
+2) Arquétipos junguianos.
+3) Emoção raiz e conflito interno.
+4) Conexão com padrões da vida real.
+5) Mensagem profunda da alma.
+6) Direção prática final.
+
+Regras:
+- Nunca retorne nada fora do JSON.
+- Linguagem humana, profunda e acolhedora.
+- Múltiplos parágrafos detalhados para usuários PREMIUM (todos os usuários).`;
+
 function getModel() {
     return process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 }
 
-// Helper para chamar a OpenAI e devolver JSON
-async function interpretarSonhoIA(textoSonho, premium, uid) {
+async function interpretarSonhoIA(textoSonho, uid) {
     const response = await client.responses.create({
         model: getModel(),
         input: [
@@ -50,14 +65,13 @@ async function interpretarSonhoIA(textoSonho, premium, uid) {
                 content: [
                     {
                         type: 'text',
-                        text: `O usuário é ${premium ? 'PREMIUM' : 'FREE'} (ID: ${uid || 'desconhecido'}). O sonho é: ${textoSonho}`,
+                        text: `Usuário PREMIUM (ID: ${uid || 'desconhecido'}) enviou o sonho: ${textoSonho}`,
                     },
                 ],
             },
         ],
     });
 
-    // Tenta pegar texto da forma mais simples possível
     const raw =
         response.output_text ||
         (response.output &&
@@ -77,19 +91,19 @@ async function interpretarSonhoIA(textoSonho, premium, uid) {
 // =========================
 app.post('/api/interpretarSonho', async (req, res) => {
     try {
-        const { uid, dreamText, premium } = req.body;
+        const { uid, dreamText } = req.body;
 
         if (!dreamText) {
-            return res
-                .status(400)
-                .json({ success: false, error: 'Texto do sonho é obrigatório.' });
+            return res.status(400).json({
+                success: false,
+                error: 'Texto do sonho é obrigatório.',
+            });
         }
 
-        console.log(
-            `[API] /api/interpretarSonho para usuário ${uid} (Premium: ${premium})`
-        );
+        // PREMIUM sempre verdadeiro
+        console.log(`[API] /api/interpretarSonho para usuário ${uid} (Premium: true)`);
 
-        const result = await interpretarSonhoIA(dreamText, premium, uid);
+        const result = await interpretarSonhoIA(dreamText, uid);
 
         res.json({
             success: true,
@@ -109,22 +123,17 @@ app.post('/api/interpretarSonho', async (req, res) => {
 // =========================
 app.post('/interpretarSonho', async (req, res) => {
     try {
-        const { uid, dreamText, premium, text } = req.body;
+        const { uid, dreamText, text } = req.body;
 
         const finalText = dreamText || text;
         if (!finalText) {
-            return res
-                .status(400)
-                .json({ error: 'Texto do sonho é obrigatório.' });
+            return res.status(400).json({ error: 'Texto do sonho é obrigatório.' });
         }
 
-        console.log(
-            `[API] /interpretarSonho chamado para usuário ${uid} (Premium: ${premium})`
-        );
+        console.log(`[API] /interpretarSonho chamado para usuário ${uid} (Premium: true)`);
 
-        const result = await interpretarSonhoIA(finalText, premium, uid);
+        const result = await interpretarSonhoIA(finalText, uid);
 
-        // Rota compatível com o front: retorna o objeto direto
         return res.json(result);
     } catch (error) {
         console.error('[API Error /interpretarSonho]', error);
@@ -135,26 +144,21 @@ app.post('/interpretarSonho', async (req, res) => {
 });
 
 // =========================
-// ROTA 3 – /dreams/interpret (usada pelo frontend novo)
+// ROTA 3 – /dreams/interpret
 // =========================
 app.post('/dreams/interpret', async (req, res) => {
     try {
-        const { uid, dreamText, premium, text } = req.body;
+        const { uid, dreamText, text } = req.body;
 
         const finalText = dreamText || text;
         if (!finalText) {
-            return res
-                .status(400)
-                .json({ error: 'Texto do sonho é obrigatório.' });
+            return res.status(400).json({ error: 'Texto do sonho é obrigatório.' });
         }
 
-        console.log(
-            `[API] /dreams/interpret chamado para usuário ${uid} (Premium: ${premium})`
-        );
+        console.log(`[API] /dreams/interpret chamado para usuário ${uid} (Premium: true)`);
 
-        const result = await interpretarSonhoIA(finalText, premium, uid);
+        const result = await interpretarSonhoIA(finalText, uid);
 
-        // Compatível com o padrão que o front espera
         return res.json(result);
     } catch (error) {
         console.error('[API Error /dreams/interpret]', error);
