@@ -1,11 +1,15 @@
-import OpenAI from 'openai';
+// src/services/openAiService.js
+import OpenAI from "openai";
 
-// Initialize OpenAI client
-// Ensure the process.env.OPENAI_API_KEY is loaded by the main entry point (app.js/index.js)
-const openai = new OpenAI({
+// Inicializa cliente com variável correta (USAR APENAS NO BACKEND)
+const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Modelo padrão para todo o backend (pode trocar depois se quiser)
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+
+// PROMPTS
 const DREAM_SYSTEM_PROMPT = `Você é uma inteligência especializada em interpretação de sonhos, emoção, traumas, padrões da psique e contexto espiritual suave.
 Entregue respostas claras, profundas, empáticas e estruturadas no formato JSON exato solicitado.
 Campos obrigatórios no JSON:
@@ -14,7 +18,7 @@ Campos obrigatórios no JSON:
   "interpretationMain": "Resumo profundo e significado principal",
   "symbols": [{"name": "Símbolo", "meaning": "Significado"}],
   "emotions": ["Emoção1", "Emoção2"],
-  "lifeAreas": ["Área1", "Área2"],
+  "lifeAreas": ["Área1"],
   "advice": "Ações práticas e pontos de atenção",
   "tags": ["tag1", "tag2"],
   "language": "pt"
@@ -22,118 +26,166 @@ Campos obrigatórios no JSON:
 Analise o conteúdo com profundidade.`;
 
 const CONTEXT_SYSTEM_PROMPT = `Você é uma inteligência especializada em psicologia analítica.
-Analise o contexto de vida do usuário e seus sonhos recentes para encontrar padrões e conexões.
-Responda APENAS com o texto da análise, de forma acolhedora, profunda e direta (máximo 3 parágrafos).
-Foque em como o momento de vida explica os sonhos e vice-versa.`;
+Analise o contexto de vida do usuário e seus sonhos recentes para encontrar padrões.
+Responda APENAS com texto puro, profundo e acolhedor (máximo 3 parágrafos).`;
 
-/**
- * Interprets a dream using GPT-5.1
- * @param {string} dreamText 
- * @param {string} userId 
- * @param {boolean} isPremium 
- * @returns {Promise<object>} JSON InterpretationResult
- */
-export const interpretDreamWithGPT5 = async (dreamText, userId, isPremium = false) => {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error("OPENAI_API_KEY not configured on server.");
+const DAILY_MESSAGE_PROMPT = `Você é uma IA que gera uma mensagem do dia curta, profunda e inspiradora.
+Baseie-se no que a pessoa está vivendo e nos sonhos recentes.
+Formato: texto simples, máximo 6 linhas.`;
+
+// Helper seguro para pegar texto da nova API
+function extractTextFromResponse(response) {
+    // 1) Tenta usar output_text (forma nova simplificada)
+    const ot = response?.output_text;
+    if (ot) {
+        if (Array.isArray(ot)) {
+            const first = ot[0];
+            if (typeof first === "string") return first;
+            if (first && typeof first.text === "string") return first.text;
+        } else if (typeof ot === "string") {
+            return ot;
+        }
     }
 
-    try {
-        console.log(`[OpenAiService] Calling GPT-5.1 for user ${userId}...`);
+    // 2) Fallback para estrutura detalhada: response.output[0].content[0].text
+    const item = response?.output?.[0]?.content?.[0];
+    if (!item) {
+        throw new Error("Resposta da OpenAI veio sem output esperado.");
+    }
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-5.1", // Using the requested model
-            messages: [
-                { role: "system", content: DREAM_SYSTEM_PROMPT },
-                { role: "user", content: `Contexto do usuário: ID ${userId}, Plano ${isPremium ? 'Premium' : 'Free'}.\n\nSonho: ${dreamText}` }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.7,
+    const txt = item.text;
+    if (typeof txt === "string") return txt;
+    if (txt && typeof txt.value === "string") return txt.value;
+
+    throw new Error("Formato de texto inesperado na resposta da OpenAI.");
+}
+
+// =============================
+// FUNÇÃO 1 — INTERPRETAR SONHO
+// =============================
+export const interpretDreamWithGPT5 = async (dreamText, userId, isPremium = false) => {
+    try {
+        console.log(`[OpenAI] interpretando sonho para ${userId} (premium: ${isPremium})`);
+
+        const response = await client.responses.create({
+            model: DEFAULT_MODEL,
+            input: [
+                {
+                    role: "system",
+                    content: [{ type: "input_text", text: DREAM_SYSTEM_PROMPT }]
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: `Sonho do usuário ${userId} (${isPremium ? "PREMIUM" : "FREE"}): ${dreamText}`
+                        }
+                    ]
+                }
+            ]
         });
 
-        const content = completion.choices[0].message.content;
-        const result = JSON.parse(content);
+        const jsonText = extractTextFromResponse(response);
 
-        // Ensure language is set if model forgot
-        if (!result.language) result.language = 'pt';
+        // Alguns modelos podem devolver com ```json ... ``` → limpar
+        const cleaned = jsonText
+            .replace(/^```json/i, "")
+            .replace(/^```/i, "")
+            .replace(/```$/i, "")
+            .trim();
+
+        const result = JSON.parse(cleaned);
+
+        if (!result.language) {
+            result.language = "pt";
+        }
 
         return result;
-
-    } catch (error) {
-        console.error("[OpenAiService] Error interpreting dream:", error);
-        throw error; // Propagate to controller for 500 response
+    } catch (err) {
+        console.error("[OpenAI ERROR interpretDream]", err);
+        throw err;
     }
 };
 
-/**
- * Analyzes life context with recent dreams using GPT-5.1
- * @param {string} lifeText 
- * @param {Array} recentDreams 
- * @param {string} userId 
- * @returns {Promise<string>} Analysis text
- */
-export const analyzeLifeContextWithGPT5 = async (lifeText, recentDreams, userId, language = 'pt') => {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error("OPENAI_API_KEY not configured on server.");
-    }
-
+// =============================
+// FUNÇÃO 2 — CONTEXTO DE VIDA
+// =============================
+export const analyzeLifeContextWithGPT5 = async (lifeText, recentDreams, userId, language = "pt") => {
     try {
-        console.log(`[OpenAiService] Analyzing context for user ${userId} (${language})...`);
+        console.log(`[OpenAI] analisando contexto de vida de ${userId}`);
 
-        const dreamsSummary = recentDreams && recentDreams.length > 0
-            ? recentDreams.map(d => `- ${d.dreamTitle || 'Sem título'}: ${d.interpretationMain || ''}`).join('\n')
-            : 'Nenhum sonho recente registrado.';
+        const dreamsSummary =
+            recentDreams?.length
+                ? recentDreams
+                      .map((d) => `- ${d.dreamTitle || "Sem título"}: ${d.interpretationMain || ""}`)
+                      .join("\n")
+                : "Nenhum sonho recente.";
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-5.1",
-            messages: [
-                { role: "system", content: CONTEXT_SYSTEM_PROMPT },
-                { role: "user", content: `Contexto de vida: ${lifeText}\n\nResumo dos sonhos recentes:\n${dreamsSummary}\n\nIdioma da resposta: ${language}` }
-            ],
-            temperature: 0.7,
+        const response = await client.responses.create({
+            model: DEFAULT_MODEL,
+            input: [
+                {
+                    role: "system",
+                    content: [{ type: "input_text", text: CONTEXT_SYSTEM_PROMPT }]
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: `Contexto:\n${lifeText}\n\nSonhos recentes:\n${dreamsSummary}\n\nIdioma: ${language}`
+                        }
+                    ]
+                }
+            ]
         });
 
-        return completion.choices[0].message.content;
-
-    } catch (error) {
-        console.error("[OpenAiService] Error analyzing context:", error);
-        throw error;
+        const text = extractTextFromResponse(response);
+        return text;
+    } catch (err) {
+        console.error("[OpenAI ERROR lifeContext]", err);
+        throw err;
     }
 };
-const DAILY_MESSAGE_PROMPT = `Você é uma IA que gera uma MENSAGEM DO DIA curta, profunda, objetiva e inspiradora.
-Baseie-se no que a pessoa está vivendo e nos sonhos recentes (se houver).
-A mensagem deve:
-- Validar a dor e os desafios.
-- Destacar 1 a 3 pontos principais de força / aprendizado.
-- Entregar uma frase/convite para ação concreta e positiva.
-- Ter linguagem simples, direta e empática.
-NÃO use formatação markdown complexa, apenas texto limpo. Máximo 6 linhas.`;
 
-export const generateDailyMessageWithGPT5 = async (recentDreams, userId, language = 'pt') => {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error("OPENAI_API_KEY not configured on server.");
-    }
-
+// =============================
+// FUNÇÃO 3 — MENSAGEM DO DIA
+// =============================
+export const generateDailyMessageWithGPT5 = async (recentDreams, userId, language = "pt") => {
     try {
-        console.log(`[OpenAiService] Generating daily message for user ${userId}...`);
+        console.log(`[OpenAI] gerando mensagem do dia para ${userId}`);
 
-        const dreamsSummary = recentDreams && recentDreams.length > 0
-            ? recentDreams.map(d => `- ${d.dreamTitle || 'Sonho'}: ${d.interpretationMain || ''}`).join('\n')
-            : 'Nenhum sonho recente.';
+        const dreamsSummary =
+            recentDreams?.length
+                ? recentDreams
+                      .map((d) => `- ${d.dreamTitle || "Sonho"}: ${d.interpretationMain || ""}`)
+                      .join("\n")
+                : "Nenhum sonho recente.";
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-5.1",
-            messages: [
-                { role: "system", content: DAILY_MESSAGE_PROMPT },
-                { role: "user", content: `Contexto dos Sonhos Recentes:\n${dreamsSummary}\n\nIdioma preferido: ${language}` }
-            ],
-            temperature: 0.8,
+        const response = await client.responses.create({
+            model: DEFAULT_MODEL,
+            input: [
+                {
+                    role: "system",
+                    content: [{ type: "input_text", text: DAILY_MESSAGE_PROMPT }]
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: `Resumo dos sonhos:\n${dreamsSummary}\nIdioma: ${language}`
+                        }
+                    ]
+                }
+            ]
         });
 
-        return completion.choices[0].message.content;
-
-    } catch (error) {
-        console.error("[OpenAiService] Error generating daily message:", error);
-        throw error;
+        const text = extractTextFromResponse(response);
+        return text;
+    } catch (err) {
+        console.error("[OpenAI ERROR dailyMessage]", err);
+        throw err;
     }
 };
