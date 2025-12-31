@@ -1,6 +1,16 @@
 // src/services/dreamInterpreter.cjs
 const { openaiClient } = require("./openaiClient.cjs");
 
+function resolveModel() {
+    const raw = process.env.OPENAI_MODEL;
+    const model = raw ? String(raw).trim() : "gpt-4.1-mini";
+
+    // Log explícito pra pegar espaço/enter/aspas invisíveis
+    console.log(`[Backend] OPENAI_MODEL raw: ${JSON.stringify(raw)} | resolved: ${JSON.stringify(model)}`);
+
+    return model || "gpt-4.1-mini";
+}
+
 function safeJsonParse(raw) {
     if (!raw || typeof raw !== "string") return raw;
 
@@ -54,7 +64,7 @@ function extractTextFromResponse(response) {
 }
 
 async function interpretDream(dreamText, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const model = resolveModel();
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -109,12 +119,12 @@ Responda no idioma: ${language}`
 
     } catch (error) {
         console.error("Erro ao interpretar sonho:", error);
-        return { error: error.message }; // Retorna objeto ao invés de string JSON para consistência
+        return { error: error.message };
     }
 }
 
 async function generateDeepQuestions(dreamText, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const model = resolveModel();
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -145,7 +155,6 @@ REGRAS:
 
     } catch (error) {
         console.error("Erro ao gerar perguntas de aprofundamento:", error);
-        // Fallback simples se falhar
         return [
             "Esse sonho se parece com algo que você está vivendo hoje?",
             "Qual o sentimento mais forte que ficou ao acordar?",
@@ -155,7 +164,7 @@ REGRAS:
 }
 
 async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswers, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const model = resolveModel();
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -227,7 +236,7 @@ IDIOMA SOLICITADO: ${language}`
 }
 
 async function generateGlobalAnalysis(dreams, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const model = resolveModel();
     console.log(`[Backend] Iniciando Análise Global com ${dreams.length} sonhos usando modelo: ${model} e idioma: ${language}`);
 
     try {
