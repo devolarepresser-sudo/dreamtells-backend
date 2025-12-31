@@ -54,7 +54,7 @@ function extractTextFromResponse(response) {
 }
 
 async function interpretDream(dreamText, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4o";
+    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -114,7 +114,7 @@ Responda no idioma: ${language}`
 }
 
 async function generateDeepQuestions(dreamText, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4o";
+    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -155,7 +155,7 @@ REGRAS:
 }
 
 async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswers, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4o";
+    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -227,7 +227,7 @@ IDIOMA SOLICITADO: ${language}`
 }
 
 async function generateGlobalAnalysis(dreams, language = "pt") {
-    const model = process.env.OPENAI_MODEL || "gpt-4o";
+    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
     console.log(`[Backend] Iniciando Análise Global com ${dreams.length} sonhos usando modelo: ${model} e idioma: ${language}`);
 
     try {
