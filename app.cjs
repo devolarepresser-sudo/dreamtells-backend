@@ -17,7 +17,7 @@ const client = new OpenAI({
 });
 
 // Import Dream Routes
-const dreamRoutes = require('./src/routes/dreamRoutes.cjs');
+const dreamRoutes = require("./server/src/routes/dreamRoutes.cjs");
 
 const SYSTEM_PROMPT = `Você é o interpretador oficial do aplicativo DreamTells, utilizando o Método de Interpretação Profunda DreamTells (D.D.I.P.). 
 Seu papel é criar interpretações de sonhos ricas, profundas, emocionais e estruturadas, sempre com foco em autoconhecimento, contexto psicológico e mensagem da alma.
