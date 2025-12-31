@@ -51,7 +51,7 @@ REGRAS OBRIGATÓRIAS para o campo "interpretationMain":
 REGRAS para os outros campos:
 - "symbols": liste de 2 a 6 símbolos importantes do sonho; para cada símbolo, explique o significado psicológico, emocional e simbólico dentro do CONTEXTO específico daquele sonho (não use significados genéricos demais).
 - "emotions": liste as principais emoções envolvidas no sonho e no estado interno do sonhador (ex.: esperança, medo de perder algo, desejo de segurança, vulnerabilidade, etc.).
-- "lifeAreas": liste as áreas da vida possivelmente impactadas pelo conteúdo do sonho (ex.: relacionamentos, trabalho, família, autoestima, espiritualidade, finanças, saúde, propósito).
+- "lifeAreas": liste as áreas da vida possivelmente impactadas pelo conteúdo do sonho e da interpretação (ex.: relacionamentos, trabalho, família, autoestima, espiritualidade, finanças, saúde, propósito).
 - "advice": escreva um texto de pelo menos 3 frases, oferecendo uma orientação prática, acolhedora e realista. Mostre como o sonhador pode refletir, integrar e agir a partir da mensagem do sonho, SEM ser fatalista ou determinista.
 - "tags": crie de 3 a 7 palavras-chave que resumem temas centrais do sonho e da interpretação (ex.: compromisso, mudança, cura emocional, medo de abandono, nova fase, etc.).
 - "language": sempre "pt".
@@ -73,13 +73,15 @@ async function interpretarSonhoIA(textoSonho, uid) {
         input: [
             {
                 role: 'system',
-                content: [{ type: 'text', text: SYSTEM_PROMPT }],
+                // ✅ FIX: Responses API exige input_text, não "text"
+                content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
             },
             {
                 role: 'user',
                 content: [
                     {
-                        type: 'text',
+                        // ✅ FIX: Responses API exige input_text, não "text"
+                        type: 'input_text',
                         text: `Usuário PREMIUM (ID: ${uid || 'desconhecido'}) enviou o sonho: ${textoSonho}`,
                     },
                 ],
@@ -134,6 +136,9 @@ app.post('/api/interpretarSonho', async (req, res) => {
         });
     } catch (error) {
         console.error('[API Error /api/interpretarSonho]', error);
+        // (Opcional) Se quiser ver o motivo exato da OpenAI:
+        // console.error('[OpenAI details]', error?.error || error?.response?.data || error?.message);
+
         res.status(500).json({
             success: false,
             error: 'Não consegui interpretar seu sonho agora. Tente novamente.',
