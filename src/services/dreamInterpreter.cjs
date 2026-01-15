@@ -1,3 +1,4 @@
+
 // src/services/dreamInterpreter.cjs
 const { openaiClient } = require("./openaiClient.cjs");
 
@@ -258,23 +259,27 @@ async function generateGlobalAnalysis(dreams, language = "pt") {
                 {
                     role: "system",
                     content: `
-Você é um Analista Arquetípico Sênior e Mentor Transpessoal.
-Sua missão é olhar para o histórico de sonhos de um usuário e identificar o "Arco de Jornada" em que ele se encontra.
+Você é um Analista Arquetípico Sênior e Mentor terapêutico (estilo terapeuta de elite: profundo, direto, útil).
+Sua missão é analisar o histórico de sonhos e identificar a "Fase de Vida" / "Arco de Jornada" atual do usuário.
 
-REGRAS CRÍTICAS:
-1. IDENTIFIQUE uma "Fase de Vida" (ex: "O Despertar da Sombra", "A Travessia do Deserto", "O Chamado do Herói").
-2. ANALISE os padrões de emoção e símbolos recorrentes.
-3. FORNEÇA uma orientação de mestre para o momento atual.
-4. O tom deve ser profundo, empoderador e sábio, como um ancião ou guia espiritual.
-5. NÃO repita interpretações individuais. Fale do TODO.
+REQUISITOS DE QUALIDADE (obrigatórios):
+1) Não seja genérico. Conecte padrões reais (emoções recorrentes, símbolos, temas).
+2) Explique o "porquê" dessa fase: evidências do histórico (sem repetir sonhos individuais).
+3) Traga profundidade psicológica: conflito central + risco (sombra) + potencial (força).
+4) A orientação precisa ser prática: ações pequenas (24–72h) + uma pergunta de reflexão.
+5) Não devolva campos vazios.
 
-ESTRUTURA OBRIGATÓRIA (JSON):
+RETORNE APENAS JSON VÁLIDO (sem markdown) com EXATAMENTE este schema:
 {
   "phaseTitle": "Título impactante da fase atual",
-  "summary": "Explicação profunda de 2 a 3 parágrafos sobre o que o inconsciente está tentando processar agora.",
-  "archetype": "O arquétipo dominante presente no momento (ex: O Explorador, O Mago, O Orfão).",
-  "mainChallenge": "O maior desafio interno identificado no momento.",
-  "advice": "Orientação prática e espiritual para navegar nesta fase."
+  "phaseName": "Nome curto da fase (pode repetir phaseTitle se necessário)",
+  "archetype": "Arquétipo dominante (ex.: O Explorador, O Mago, O Órfão)",
+  "description": "Texto profundo em 2 a 4 parágrafos sobre o que o inconsciente está processando agora, incluindo conflito central e por que isso aparece.",
+  "keyChallenges": ["3 a 6 desafios internos (curtos e específicos)"],
+  "strengths": ["3 a 6 forças/potenciais do momento (curtos e específicos)"],
+  "guidance": "Orientação do mentor: direta, prática e profunda. Inclua 3 ações concretas (24–72h) + 1 pergunta de reflexão no final.",
+  "tags": ["6 a 10 tags curtas"],
+  "language": "${language}"
 }
 
 IMPORTANTE:
@@ -282,14 +287,72 @@ Responda estritamente no idioma: ${language}`
                 },
                 {
                     role: "user",
-                    content: `HISTÓRICO DE SONHOS E INTERPRETAÇÕES:\n${JSON.stringify(dreamSummary, null, 2)}\n\nIDIOMA: ${language}`
+                    content: `HISTÓRICO DE SONHOS (resumo):\n${JSON.stringify(dreamSummary, null, 2)}\n\nIDIOMA: ${language}`
                 }
             ],
             temperature: 0.7
         });
 
         const content = response.choices[0].message.content;
-        return safeJsonParse(content);
+        const result = safeJsonParse(content);
+
+        // ✅ Robustez + compatibilidade (sem quebrar o que já funciona)
+        if (result && typeof result === "object") {
+            // language fallback
+            if (!result.language) result.language = language;
+
+            // phaseName fallback
+            if (!result.phaseName && result.phaseTitle) result.phaseName = result.phaseTitle;
+
+            // Garante campos principais existindo (evita UI vazia)
+            if (!result.phaseTitle) result.phaseTitle = "Fase Atual";
+            if (!result.archetype) result.archetype = "Arquétipo em Integração";
+
+            if (!result.description || typeof result.description !== "string") {
+                // Se vier "summary" antigo, usa como description
+                if (typeof result.summary === "string" && result.summary.trim()) {
+                    result.description = result.summary;
+                } else {
+                    result.description = "Seu inconsciente está sinalizando um ciclo de transição: padrões emocionais e temas recorrentes pedem integração, clareza e ação consciente.";
+                }
+            }
+
+            if (!result.guidance || typeof result.guidance !== "string") {
+                // Se vier "advice" antigo, usa como guidance
+                if (typeof result.advice === "string" && result.advice.trim()) {
+                    result.guidance = result.advice;
+                } else {
+                    result.guidance = "Escolha um ponto de fricção que vem se repetindo e transforme isso em uma ação pequena e concreta nas próximas 48h. Depois, registre o que mudou internamente.";
+                }
+            }
+
+            // Garante arrays
+            if (!Array.isArray(result.keyChallenges)) {
+                // Se vier mainChallenge antigo como string, usa como primeiro item
+                if (typeof result.mainChallenge === "string" && result.mainChallenge.trim()) {
+                    result.keyChallenges = [result.mainChallenge.trim()];
+                } else {
+                    result.keyChallenges = [];
+                }
+            }
+
+            if (!Array.isArray(result.strengths)) result.strengths = [];
+            if (!Array.isArray(result.tags)) result.tags = [];
+
+            // Aliases antigos para compatibilidade
+            if (!result.summary && result.description) result.summary = result.description;
+            if (!result.advice && result.guidance) result.advice = result.guidance;
+
+            if (!result.mainChallenge) {
+                if (Array.isArray(result.keyChallenges) && result.keyChallenges.length > 0) {
+                    result.mainChallenge = result.keyChallenges[0];
+                } else {
+                    result.mainChallenge = "Desafio central em integração (veja description).";
+                }
+            }
+        }
+
+        return result;
 
     } catch (error) {
         console.error("Erro na Análise Global:", error);
