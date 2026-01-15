@@ -4,12 +4,12 @@ const { openaiClient } = require("./openaiClient.cjs");
 
 function resolveModel() {
     const raw = process.env.OPENAI_MODEL;
-    const model = raw ? String(raw).trim() : "gpt-4.1-mini";
+    const model = raw ? String(raw).trim() : "gpt-4o"; // ✅ default agora é GPT-4o
 
     // Log explícito pra pegar espaço/enter/aspas invisíveis
     console.log(`[Backend] OPENAI_MODEL raw: ${JSON.stringify(raw)} | resolved: ${JSON.stringify(model)}`);
 
-    return model || "gpt-4.1-mini";
+    return model || "gpt-4o"; // ✅ fallback agora é GPT-4o
 }
 
 function safeJsonParse(raw) {
@@ -236,6 +236,35 @@ IDIOMA SOLICITADO: ${language}`
     }
 }
 
+// =====================
+// Helpers locais (mínimos)
+// =====================
+function isNonEmptyString(v) {
+    return typeof v === "string" && v.trim().length > 0;
+}
+
+function ensureArray(v) {
+    return Array.isArray(v) ? v : [];
+}
+
+function countParagraphs(text) {
+    if (!isNonEmptyString(text)) return 0;
+    // conta blocos separados por linha em branco
+    return text
+        .split(/\n\s*\n/g)
+        .map(s => s.trim())
+        .filter(Boolean).length;
+}
+
+function guidanceHas3ActionsAndQuestion(guidance) {
+    if (!isNonEmptyString(guidance)) return false;
+    const hasQuestion = /[?]\s*$/.test(guidance.trim()) || guidance.includes("?");
+    // tenta detectar 3 ações por marcadores ou por "1) 2) 3)" etc
+    const bullets = guidance.match(/(^|\n)\s*[-•]\s+/g)?.length || 0;
+    const numbered = guidance.match(/(^|\n)\s*\d+\s*[\)\.]\s+/g)?.length || 0;
+    return (bullets >= 3 || numbered >= 3) && hasQuestion;
+}
+
 async function generateGlobalAnalysis(dreams, language = "pt") {
     const model = resolveModel();
     console.log(`[Backend] Iniciando Análise Global com ${dreams.length} sonhos usando modelo: ${model} e idioma: ${language}`);
@@ -253,101 +282,139 @@ async function generateGlobalAnalysis(dreams, language = "pt") {
 
         console.log(`[Backend] Enviando resumo de sonhos para OpenAI...`);
 
-        const response = await openaiClient.chat.completions.create({
-            model,
-            messages: [
-                {
-                    role: "system",
-                    content: `
-Você é um Analista Arquetípico Sênior e Mentor terapêutico (estilo terapeuta de elite: profundo, direto, útil).
+        const systemPrompt = `
+Você é um Analista Arquetípico Sênior + terapeuta de elite (clínico, direto, profundo, útil).
 Sua missão é analisar o histórico de sonhos e identificar a "Fase de Vida" / "Arco de Jornada" atual do usuário.
 
-REQUISITOS DE QUALIDADE (obrigatórios):
-1) Não seja genérico. Conecte padrões reais (emoções recorrentes, símbolos, temas).
-2) Explique o "porquê" dessa fase: evidências do histórico (sem repetir sonhos individuais).
-3) Traga profundidade psicológica: conflito central + risco (sombra) + potencial (força).
-4) A orientação precisa ser prática: ações pequenas (24–72h) + uma pergunta de reflexão.
-5) Não devolva campos vazios.
+REGRAS DE PROFUNDIDADE (não negociáveis):
+1) Seja específico e baseado em evidências do histórico (emoções recorrentes, temas, tensão central). Não use frases genéricas.
+2) "description" precisa ter 2 a 4 parágrafos REAIS (separados por linha em branco), cada parágrafo com pelo menos 3 linhas.
+3) Traga o eixo do conflito: desejo vs medo, impulso vs bloqueio, necessidade vs padrão.
+4) Mostre o risco (sombra) e o potencial (força) desta fase.
+5) "guidance" deve conter:
+   - 3 ações concretas (24–72h) em lista (marcadores ou 1) 2) 3))
+   - e terminar com 1 pergunta de reflexão.
+6) Não devolva campos vazios.
 
 RETORNE APENAS JSON VÁLIDO (sem markdown) com EXATAMENTE este schema:
 {
   "phaseTitle": "Título impactante da fase atual",
   "phaseName": "Nome curto da fase (pode repetir phaseTitle se necessário)",
   "archetype": "Arquétipo dominante (ex.: O Explorador, O Mago, O Órfão)",
-  "description": "Texto profundo em 2 a 4 parágrafos sobre o que o inconsciente está processando agora, incluindo conflito central e por que isso aparece.",
+  "description": "Texto profundo em 2 a 4 parágrafos...",
   "keyChallenges": ["3 a 6 desafios internos (curtos e específicos)"],
   "strengths": ["3 a 6 forças/potenciais do momento (curtos e específicos)"],
-  "guidance": "Orientação do mentor: direta, prática e profunda. Inclua 3 ações concretas (24–72h) + 1 pergunta de reflexão no final.",
+  "guidance": "Orientação prática com 3 ações (24–72h) + 1 pergunta no final.",
   "tags": ["6 a 10 tags curtas"],
   "language": "${language}"
 }
 
 IMPORTANTE:
-Responda estritamente no idioma: ${language}`
-                },
-                {
-                    role: "user",
-                    content: `HISTÓRICO DE SONHOS (resumo):\n${JSON.stringify(dreamSummary, null, 2)}\n\nIDIOMA: ${language}`
-                }
+Responda estritamente no idioma: ${language}`.trim();
+
+        const userPrompt = `HISTÓRICO DE SONHOS (resumo):\n${JSON.stringify(dreamSummary, null, 2)}\n\nIDIOMA: ${language}`;
+
+        const response = await openaiClient.chat.completions.create({
+            model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
             ],
             temperature: 0.7
         });
 
         const content = response.choices[0].message.content;
-        const result = safeJsonParse(content);
+        let result = safeJsonParse(content);
 
-        // ✅ Robustez + compatibilidade (sem quebrar o que já funciona)
+        // ✅ Normalização + compatibilidade (sem quebrar o que já funciona)
         if (result && typeof result === "object") {
-            // language fallback
             if (!result.language) result.language = language;
 
-            // phaseName fallback
             if (!result.phaseName && result.phaseTitle) result.phaseName = result.phaseTitle;
 
-            // Garante campos principais existindo (evita UI vazia)
             if (!result.phaseTitle) result.phaseTitle = "Fase Atual";
             if (!result.archetype) result.archetype = "Arquétipo em Integração";
 
-            if (!result.description || typeof result.description !== "string") {
-                // Se vier "summary" antigo, usa como description
-                if (typeof result.summary === "string" && result.summary.trim()) {
-                    result.description = result.summary;
-                } else {
-                    result.description = "Seu inconsciente está sinalizando um ciclo de transição: padrões emocionais e temas recorrentes pedem integração, clareza e ação consciente.";
-                }
+            // Converte formatos errados em arrays
+            result.keyChallenges = ensureArray(result.keyChallenges);
+            result.strengths = ensureArray(result.strengths);
+            result.tags = ensureArray(result.tags);
+
+            // Fallbacks de texto
+            if (!isNonEmptyString(result.description)) {
+                if (isNonEmptyString(result.summary)) result.description = result.summary;
+            }
+            if (!isNonEmptyString(result.guidance)) {
+                if (isNonEmptyString(result.advice)) result.guidance = result.advice;
             }
 
-            if (!result.guidance || typeof result.guidance !== "string") {
-                // Se vier "advice" antigo, usa como guidance
-                if (typeof result.advice === "string" && result.advice.trim()) {
-                    result.guidance = result.advice;
-                } else {
-                    result.guidance = "Escolha um ponto de fricção que vem se repetindo e transforme isso em uma ação pequena e concreta nas próximas 48h. Depois, registre o que mudou internamente.";
-                }
-            }
-
-            // Garante arrays
-            if (!Array.isArray(result.keyChallenges)) {
-                // Se vier mainChallenge antigo como string, usa como primeiro item
-                if (typeof result.mainChallenge === "string" && result.mainChallenge.trim()) {
-                    result.keyChallenges = [result.mainChallenge.trim()];
-                } else {
-                    result.keyChallenges = [];
-                }
-            }
-
-            if (!Array.isArray(result.strengths)) result.strengths = [];
-            if (!Array.isArray(result.tags)) result.tags = [];
-
-            // Aliases antigos para compatibilidade
-            if (!result.summary && result.description) result.summary = result.description;
-            if (!result.advice && result.guidance) result.advice = result.guidance;
+            // Aliases antigos
+            if (!result.summary && isNonEmptyString(result.description)) result.summary = result.description;
+            if (!result.advice && isNonEmptyString(result.guidance)) result.advice = result.guidance;
 
             if (!result.mainChallenge) {
-                if (Array.isArray(result.keyChallenges) && result.keyChallenges.length > 0) {
-                    result.mainChallenge = result.keyChallenges[0];
-                } else {
-                    result.mainChallenge = "Desafio central em integração (veja description).";
+                if (result.keyChallenges.length > 0) result.mainChallenge = result.keyChallenges[0];
+                else result.mainChallenge = "Desafio central em integração (veja description).";
+            }
+        }
+
+        // ✅ Validação de profundidade: se vier raso, 1 retry controlado pedindo correção
+        const needsRetry =
+            !result ||
+            !isNonEmptyString(result.description) ||
+            countParagraphs(result.description) < 2 ||
+            !guidanceHas3ActionsAndQuestion(result.guidance);
+
+        if (needsRetry) {
+            console.warn("[Backend] GlobalAnalysis veio raso/incompleto. Executando 1 retry de correção de schema...");
+
+            const repairPrompt = `
+Você retornou um JSON que não atende aos requisitos. Corrija e retorne APENAS JSON VÁLIDO.
+Requisitos obrigatórios:
+- description com 2 a 4 parágrafos (separados por linha em branco)
+- guidance com 3 ações concretas (24–72h) em lista + terminar com 1 pergunta
+- keyChallenges 3–6 itens, strengths 3–6 itens, tags 6–10 itens
+Use o mesmo schema.
+Idioma: ${language}
+`.trim();
+
+            const response2 = await openaiClient.chat.completions.create({
+                model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                    { role: "assistant", content: JSON.stringify(result || {}) },
+                    { role: "user", content: repairPrompt }
+                ],
+                temperature: 0.6
+            });
+
+            const content2 = response2.choices[0].message.content;
+            const repaired = safeJsonParse(content2);
+
+            if (repaired && typeof repaired === "object") {
+                result = repaired;
+
+                // Normaliza novamente
+                if (!result.language) result.language = language;
+                if (!result.phaseName && result.phaseTitle) result.phaseName = result.phaseTitle;
+
+                if (!result.phaseTitle) result.phaseTitle = "Fase Atual";
+                if (!result.archetype) result.archetype = "Arquétipo em Integração";
+
+                result.keyChallenges = ensureArray(result.keyChallenges);
+                result.strengths = ensureArray(result.strengths);
+                result.tags = ensureArray(result.tags);
+
+                if (!isNonEmptyString(result.description) && isNonEmptyString(result.summary)) result.description = result.summary;
+                if (!isNonEmptyString(result.guidance) && isNonEmptyString(result.advice)) result.guidance = result.advice;
+
+                if (!result.summary && isNonEmptyString(result.description)) result.summary = result.description;
+                if (!result.advice && isNonEmptyString(result.guidance)) result.advice = result.guidance;
+
+                if (!result.mainChallenge) {
+                    if (result.keyChallenges.length > 0) result.mainChallenge = result.keyChallenges[0];
+                    else result.mainChallenge = "Desafio central em integração (veja description).";
                 }
             }
         }
