@@ -67,100 +67,150 @@ function extractTextFromResponse(response) {
 async function interpretDream(dreamText, language = "pt") {
     const model = resolveModel();
 
-    try {
-        const response = await openaiClient.chat.completions.create({
-            model,
-            messages: [
-                {
-                    role: "system",
-                    content: `
+    // =========================
+    // Prompt MAIS PROFUNDO (sem mudar schema)
+    // =========================
+    const systemPrompt = `
 Você NÃO é um explicador genérico de sonhos.
-Você é um analista psicológico profundo, com base em psicologia simbólica, comportamento humano e conflitos inconscientes.
+Você é um analista psicológico profundo, com base em psicologia simbólica, comportamento humano, conflitos inconscientes e padrões repetitivos.
 
 MISSÃO:
-Interpretar o sonho de forma ESPECÍFICA, DIRETA e PSICOLOGICAMENTE SIGNIFICATIVA.
-Evite qualquer interpretação genérica que poderia servir para qualquer pessoa.
+Interpretar o sonho de forma ESPECÍFICA, DIRETA, PSICOLOGICAMENTE SIGNIFICATIVA e ÚTIL para mudança real.
+Evite interpretações genéricas que poderiam servir para qualquer pessoa.
 
-REGRAS OBRIGATÓRIAS:
-1. NÃO descreva o sonho. Interprete.
-2. NÃO use frases vagas como “isso pode indicar”, “talvez signifique”, “em geral”.
-3. NÃO seja excessivamente positivo ou reconfortante.
-4. NÃO espiritualize demais nem racionalize demais.
-5. ARRISQUE uma leitura psicológica clara, mesmo que seja desconfortável.
-6. Seja específico: fale de conflitos internos concretos, decisões evitadas e tensões emocionais reais.
+REGRAS OBRIGATÓRIAS (não quebre):
+1) NÃO recontar o sonho. Interprete.
+2) NÃO usar linguagem vaga: "pode indicar", "talvez", "em geral", "normalmente".
+3) NÃO ser só positivo/fofo. Se houver conflito, mostre o conflito.
+4) NÃO teoria/jargão. Nada de aula.
+5) ARRISQUE uma leitura clara: tensão interna, necessidade real, defesa emocional, decisão evitada.
+6) Seja específico: decisões evitadas, medo principal, desejo principal, padrão repetido.
+
+PROFUNDIDADE MÍNIMA:
+- interpretationMain deve ter pelo menos 2 parágrafos (separados por linha em branco).
+- Primeiro parágrafo: eixo do conflito (desejo vs medo / impulso vs bloqueio) + o que isso denuncia no agora.
+- Segundo parágrafo: padrão emocional + o que a pessoa faz para evitar sentir/agir + consequência disso.
+- Symbols: 3 a 6 símbolos (não 1 só), com significado psicológico específico.
+- Emotions: 4 a 8 emoções específicas.
+- LifeAreas: 3 a 6 áreas (ex.: trabalho, relacionamentos, identidade, propósito, corpo, finanças).
+- Advice: 3 ações concretas (24–72h) em lista + terminar com 1 pergunta de reflexão.
 
 ESTRUTURA OBRIGATÓRIA DA RESPOSTA (JSON):
-Responda APENAS com JSON.
+Responda APENAS com JSON válido (sem markdown).
 
 {
   "dreamTitle": "Um título curto, impactante e coerente com o eixo central do sonho",
-  "interpretationMain": "Uma interpretação completa, profunda e envolvente, integrando as camadas do método em texto corrido.",
+  "interpretationMain": "Interpretação profunda em texto corrido com 2+ parágrafos (linha em branco entre eles).",
   "symbols": [
-    { "name": "Nome de um símbolo importante", "meaning": "Significado emocional/psicológico especifico." }
+    { "name": "Símbolo", "meaning": "Significado emocional/psicológico específico." }
   ],
-  "emotions": ["Lista das principais emoções percebidas"],
-  "lifeAreas": ["Áreas da vida afetadas"],
-  "advice": "Orientações práticas e acolhedoras. Termine com: 'Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.' (traduza se necessário).",
-  "tags": ["palavras-chave"],
+  "emotions": ["..."],
+  "lifeAreas": ["..."],
+  "advice": "Inclua 3 ações concretas (24–72h) em lista + termine com uma pergunta.",
+  "tags": ["..."],
   "language": "${language}"
 }
 
 IMPORTANTE:
-Responda no idioma: ${language}`
-                },
-                {
-                    role: "user",
-                    content: `Sonho: ${dreamText}\n\nIdioma da resposta: ${language}`
-                }
-            ]
-        });
+Responda no idioma: ${language}
+`.trim();
 
-        const content = response.choices[0].message.content;
-        return safeJsonParse(content);
-
-    } catch (error) {
-        console.error("Erro ao interpretar sonho:", error);
-        return { error: error.message };
-    }
-}
-
-async function generateDeepQuestions(dreamText, language = "pt") {
-    const model = resolveModel();
+    const userPrompt = `Sonho: ${dreamText}\n\nIdioma da resposta: ${language}`;
 
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                {
-                    role: "system",
-                    content: `Você é um terapeuta junguiano experiente. 
-Gere perguntas profundas para ajudar o sonhador a refletir.
-REGRAS:
-1. Gere exatamente 6 perguntas.
-2. A PRIMEIRA pergunta deve ser sobre se o sonho reflete o momento atual.
-3. As outras 5 perguntas devem ser específicas sobre os símbolos e emoções do sonho.
-4. Responda APENAS com JSON no formato: { "questions": ["pergunta 1", "pergunta 2", ...] }
-5. Idioma da resposta: ${language}`
-                },
-                {
-                    role: "user",
-                    content: `Sonho: ${dreamText}\nIdioma: ${language}`
-                }
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
             ],
             temperature: 0.7
         });
 
-        const content = response.choices[0].message.content;
-        const json = safeJsonParse(content);
-        return json.questions || [];
+        let result = safeJsonParse(response.choices[0].message.content);
+
+        // ========= Normalização sem quebrar =========
+        if (result && typeof result === "object") {
+            if (!result.language) result.language = language;
+
+            if (!Array.isArray(result.symbols)) result.symbols = [];
+            if (!Array.isArray(result.emotions)) result.emotions = [];
+            if (!Array.isArray(result.lifeAreas)) result.lifeAreas = [];
+            if (!Array.isArray(result.tags)) result.tags = [];
+
+            if (!result.dreamTitle) result.dreamTitle = "Sonho sem título";
+            if (!result.interpretationMain) result.interpretationMain = "";
+            if (!result.advice) result.advice = "";
+        }
+
+        // ========= Validação de profundidade =========
+        const paragraphs =
+            (typeof result?.interpretationMain === "string" && result.interpretationMain.trim())
+                ? result.interpretationMain.split(/\n\s*\n/g).map(s => s.trim()).filter(Boolean).length
+                : 0;
+
+        const has3Actions =
+            typeof result?.advice === "string" &&
+            ((result.advice.match(/(^|\n)\s*[-•]\s+/g)?.length || 0) >= 3 ||
+             (result.advice.match(/(^|\n)\s*\d+\s*[\)\.]\s+/g)?.length || 0) >= 3) &&
+            result.advice.includes("?");
+
+        const tooShallow =
+            !result ||
+            paragraphs < 2 ||
+            result.symbols.length < 3 ||
+            result.emotions.length < 4 ||
+            result.lifeAreas.length < 3 ||
+            !has3Actions;
+
+        // ========= 1 retry controlado se vier raso =========
+        if (tooShallow) {
+            console.warn("[Backend] interpretDream veio raso/incompleto. Executando 1 retry de correção...");
+
+            const repairPrompt = `
+Seu JSON veio raso/incompleto. Refaça mantendo o MESMO schema.
+Obrigatório:
+- interpretationMain com 2+ parágrafos (linha em branco)
+- symbols 3–6 itens
+- emotions 4–8 itens
+- lifeAreas 3–6 itens
+- advice com 3 ações (24–72h) em lista + terminar com pergunta
+Sem frases genéricas.
+Idioma: ${language}
+`.trim();
+
+            const response2 = await openaiClient.chat.completions.create({
+                model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                    { role: "assistant", content: JSON.stringify(result || {}) },
+                    { role: "user", content: repairPrompt }
+                ],
+                temperature: 0.6
+            });
+
+            const repaired = safeJsonParse(response2.choices[0].message.content);
+            if (repaired && typeof repaired === "object") {
+                result = repaired;
+
+                // normaliza de novo (sem quebrar)
+                if (!result.language) result.language = language;
+                if (!Array.isArray(result.symbols)) result.symbols = [];
+                if (!Array.isArray(result.emotions)) result.emotions = [];
+                if (!Array.isArray(result.lifeAreas)) result.lifeAreas = [];
+                if (!Array.isArray(result.tags)) result.tags = [];
+                if (!result.dreamTitle) result.dreamTitle = "Sonho sem título";
+                if (!result.interpretationMain) result.interpretationMain = "";
+                if (!result.advice) result.advice = "";
+            }
+        }
+
+        return result;
 
     } catch (error) {
-        console.error("Erro ao gerar perguntas de aprofundamento:", error);
-        return [
-            "Esse sonho se parece com algo que você está vivendo hoje?",
-            "Qual o sentimento mais forte que ficou ao acordar?",
-            "Há algum símbolo que chamou sua atenção?"
-        ];
+        console.error("Erro ao interpretar sonho:", error);
+        return { error: error.message };
     }
 }
 
