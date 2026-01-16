@@ -97,15 +97,19 @@ function ensureMinArrays(result) {
 /**
  * Detectores suaves (SEM travar a alma do texto):
  * - Não proíbe palavras "naturais"; só evita resposta curta demais e genérica demais.
+ *
+ * AJUSTE (mais liberdade):
+ * - Antes estava marcando como raso por frases comuns ("este sonho sugere") e por tamanho.
+ * - Agora só sinaliza "raso" quando for curto demais OU tiver muitos sinais de texto genérico.
  */
 function looksGenericOrThin(text) {
     if (!isNonEmptyString(text)) return true;
     const t = text.toLowerCase();
 
-    // se for muito curto, quase sempre é raso
-    if (t.length < 420) return true;
+    // muito curto quase sempre é raso
+    if (t.length < 360) return true;
 
-    // sinais fortes de "texto internet"
+    // sinais de "texto internet" (não é proibido, só sinaliza quando em excesso)
     const genericHits = [
         "este sonho sugere",
         "este sonho indica",
@@ -114,13 +118,15 @@ function looksGenericOrThin(text) {
         "em geral",
         "normalmente",
         "geralmente",
-        "simboliza"
+        "simboliza",
+        "representa"
     ];
 
     const hits = genericHits.reduce((acc, g) => (t.includes(g) ? acc + 1 : acc), 0);
 
-    // NÃO é bloqueio absoluto; é só um sinal
-    return hits >= 3;
+    // Ajuste: tolerância maior (antes >=3). Agora só sinaliza se estiver MUITO genérico.
+    // Isso evita o retry forçar “modo checklist” quando o conteúdo já está bom.
+    return hits >= 5;
 }
 
 function adviceHas3ActionsAndQuestion(advice) {
@@ -196,48 +202,46 @@ async function interpretDream(dreamText, language = "pt") {
 
     // Prompt: profundo + com liberdade; sem checklist que mata a escrita
     const systemPrompt = `
-Você é uma equipe clínica de interpretação de sonhos (nível terapeuta sênior), especializada em Psicologia Analítica (Carl Jung) e Psicodinâmica contemporânea.
+Você é uma equipe clínica de interpretação de sonhos (terapeuta sênior), com base em Psicologia Analítica (Jung) e Psicodinâmica contemporânea.
 
-OBJETIVO:
-Entregar uma interpretação profunda, útil e tecnicamente consistente, sem fantasiar. Você deve tratar o sonho como um material do inconsciente que tenta regular uma tensão real (conflito, defesa, desejo, medo).
+MISSÃO:
+Gerar uma interpretação profunda e útil, tratando o sonho como material do inconsciente que tenta regular uma tensão real (conflito, defesa, desejo, medo). Você deve formular uma leitura CLARA, e não apenas descrever símbolos.
 
-COMO VOCÊ TRABALHA (estilo):
-- Clínico, direto, com humanidade. Nada de texto “internet”.
-- Use Jung com precisão (Sombra, Persona, Complexos, Compensação, Projeção, Individuação) SOMENTE quando o sonho sustentar. Não force teoria.
-- Use psicodinâmica para dar clareza (evitação, controle, ambivalência, culpa, dissociação, compulsão à repetição, conflito de aproximação-evitação).
-- Não dê aula. Conceito só entra se iluminar a dinâmica do sonho.
+POSTURA (importante):
+- Seja específico e direto, sem “texto de internet”.
+- Autorize hipóteses: você pode inferir dinâmicas psicológicas a partir do sonho, DESDE que não invente fatos da vida do usuário.
+- Evite linguagem vaga (ex.: "pode indicar", "talvez", "em geral"). Prefira: "isso aponta para..." / "isso sugere um conflito entre...".
+- Use Jung somente quando o sonho sustentar (Sombra, Persona, Complexos, Compensação, Projeção, Individuação). Não force teoria e não dê aula.
 
 O QUE NÃO PODE:
-- Inventar fatos sobre a vida do usuário.
-- Romantizar / espiritualizar sem base.
-- Fazer “palestra motivacional”.
+- Inventar acontecimentos biográficos.
+- Romantizar ou espiritualizar sem base.
+- Fazer palestra motivacional.
 
-REQUISITOS DE QUALIDADE (sem rigidez burra):
-- "interpretationMain" deve ter 2 ou 3 parágrafos REAIS, separados por linha em branco (\\n\\n).
-- Cada parágrafo precisa avançar a análise, não repetir.
-- A análise precisa conter:
-  (1) tensão central (desejo vs medo / impulso vs defesa),
-  (2) o que está sendo evitado ou mantido trancado,
-  (3) o custo disso na vida desperta (ansiedade, repetição, bloqueio, conflito).
-
-ADVICE (obrigatório):
-- 3 ações concretas para 24–72h EM LISTA (1) 2) 3) ou -)
-- Finaliza com 1 pergunta de reflexão
-- Termina com: "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells."
+REQUISITOS DE SUBSTÂNCIA (o que não pode faltar):
+- Traga 1 hipótese central (tensão principal) + 1 hipótese alternativa plausível (mais curta).
+- Nomeie uma defesa provável (ex.: evitação, controle, racionalização, dissociação, compulsão à repetição, ambivalência).
+- Explique o custo provável na vida desperta (ansiedade, bloqueio, repetição, conflito, exaustão).
+- Conecte 3–6 símbolos diretamente à tensão (não como dicionário genérico).
 
 FORMATO (JSON apenas, sem markdown):
 {
   "dreamTitle": "Título curto e impactante",
-  "interpretationMain": "2–3 parágrafos, \\n\\n entre eles",
+  "interpretationMain": "2–3 parágrafos REAIS, com \\n\\n entre eles",
   "symbols": [
     { "name": "Símbolo", "meaning": "Significado psicológico específico ligado à tensão central" }
   ],
   "emotions": ["mínimo 4 emoções específicas (ex.: vigilância, culpa, impotência, raiva contida...)"],
   "lifeAreas": ["mínimo 3 áreas (ex.: relacionamento, trabalho, identidade, decisões, saúde emocional...)"],
-  "advice": "3 ações (24–72h) + pergunta final + frase DreamTells",
+  "advice": "3 ações concretas para 24–72h em lista + 1 pergunta final + frase DreamTells",
   "tags": ["6 a 10 tags curtas"],
   "language": "${language}"
 }
+
+ADVICE (obrigatório):
+- 3 ações concretas (24–72h) EM LISTA (1) 2) 3) ou -)
+- Finaliza com 1 pergunta de reflexão
+- Termina com: "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells."
 
 Responda estritamente no idioma: ${language}
 `.trim();
@@ -251,7 +255,7 @@ Responda estritamente no idioma: ${language}
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
             ],
-            temperature: 0.75
+            temperature: 0.82
         });
 
         const content = response.choices?.[0]?.message?.content || "";
@@ -270,9 +274,11 @@ Responda estritamente no idioma: ${language}
 
             const repairPrompt = `
 Refaça a resposta mantendo o MESMO schema JSON.
-Aprimore SUBSTÂNCIA (não encha linguiça) e garanta:
+Foque em PROFUNDIDADE CLÍNICA (sem enrolar) e garanta:
 - interpretationMain com 2–3 parágrafos reais (\\n\\n)
-- Conecte símbolos à tensão central + defesa psicológica + custo na vida desperta
+- 1 hipótese central + 1 hipótese alternativa (curta)
+- Nomeie a defesa psicológica predominante e o custo na vida desperta
+- Conecte símbolos à tensão (não “dicionário de símbolos”)
 - Advice com 3 ações (24–72h) EM LISTA + 1 pergunta final + frase DreamTells
 - Sem inventar fatos sobre a vida do usuário
 Idioma: ${language}
@@ -286,7 +292,7 @@ Idioma: ${language}
                     { role: "assistant", content: JSON.stringify(result || {}) },
                     { role: "user", content: repairPrompt }
                 ],
-                temperature: 0.65
+                temperature: 0.68
             });
 
             const content2 = response2.choices?.[0]?.message?.content || "";
