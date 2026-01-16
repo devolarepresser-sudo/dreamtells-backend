@@ -86,6 +86,7 @@ function countParagraphs(text) {
 function hasTooGenericLanguage(text) {
     if (!isNonEmptyString(text)) return true;
     const t = text.toLowerCase();
+
     // sinais clássicos de genericão
     const genericHits = [
         "sugere que",
@@ -102,13 +103,14 @@ function hasTooGenericLanguage(text) {
 
 function adviceHas3ActionsAndQuestion(advice) {
     if (!isNonEmptyString(advice)) return false;
+
     const hasQuestion = advice.includes("?");
 
     // detectar 3 ações por marcadores ou numeração
     const bullets = advice.match(/(^|\n)\s*[-•]\s+/g)?.length || 0;
     const numbered = advice.match(/(^|\n)\s*\d+\s*[\)\.]\s+/g)?.length || 0;
 
-    // detectar 3 verbos imperativos em linhas separadas (fallback)
+    // detectar 3 ações por linhas com prefixo (fallback)
     const lines = advice.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const actionLines = lines.filter(l => /^(\d+\s*[\)\.]\s+|[-•]\s+)/.test(l));
     const has3ActionLines = actionLines.length >= 3;
@@ -127,19 +129,29 @@ function ensureMinArrays(result) {
     return result;
 }
 
+/**
+ * Interpretação PREMIUM: profundidade real e formato consistente.
+ * Regras fortes para resolver o problema "Count=1" e o texto raso.
+ */
 function meetsInterpretationQuality(result) {
     if (!result || typeof result !== "object") return false;
 
     const interpretationMain = result.interpretationMain;
     const advice = result.advice;
 
-    const paragraphsOk = countParagraphs(interpretationMain) >= 2; // 2+ parágrafos
-    const adviceOk = adviceHas3ActionsAndQuestion(advice);         // 3 ações + pergunta
-    const notGeneric = !hasTooGenericLanguage(interpretationMain); // evita “pode/sugere/talvez”
+    // ✅ Validação de densidade mínima (pelo menos 3 parágrafos reais)
+    const paragraphsOk = countParagraphs(interpretationMain) >= 3;
+
+    // ✅ advice: pelo menos 3 ações e uma pergunta
+    const adviceOk = adviceHas3ActionsAndQuestion(advice);
+
+    // ✅ anti-vagueza (não pode ser puramente genérico)
+    const notGeneric = isNonEmptyString(interpretationMain) && interpretationMain.length > 400;
+
+    // ✅ schema mínimo (garantir que arrays existam)
     const arraysOk =
-        ensureArray(result.symbols).length >= 3 &&
-        ensureArray(result.emotions).length >= 4 &&
-        ensureArray(result.lifeAreas).length >= 3;
+        ensureArray(result.symbols).length >= 2 &&
+        ensureArray(result.emotions).length >= 3;
 
     return paragraphsOk && adviceOk && notGeneric && arraysOk;
 }
@@ -149,43 +161,35 @@ async function interpretDream(dreamText, language = "pt") {
 
     // Prompt principal (mais exigente, junguiano e anti-genérico)
     const systemPrompt = `
-Você NÃO é um explicador genérico de sonhos.
-Você é um analista terapêutico de elite com base em Psicologia Analítica (Carl Jung), Shadow Work, comportamento humano e conflitos inconscientes.
+Você é um Analista Clínico de Sonhos especializado em Psicologia Analítica (Carl Jung) e Psicodinâmica Moderna.
+Sua missão é fornecer interpretações de ALTO NÍVEL, objetivas e cientificamente embasadas.
 
-MISSÃO:
-Interpretar o sonho de forma ESPECÍFICA, DIRETA e PSICOLOGICAMENTE SIGNIFICATIVA, conectando símbolos a conflitos reais (tensão central, decisão evitada, medo dominante, desejo reprimido).
+DIRETRIZES TÉCNICAS:
+1) ABORDAGEM JUNGUIANA: Use conceitos como Sombra, Persona, Compensação, Individuação ou Projeção apenas quando houver evidência clara nos símbolos ou narrativa. Não force a teoria.
+2) PSICODINÂMICA: Identifique mecanismos de defesa (evitação, racionalização, dissociação), ambivalência emocional, e padrões de compulsão à repetição.
+3) CLAREZA OBJETIVA: Não use jargão vazio. Os conceitos técnicos devem servir como ferramentas de clareza para o sonhador, não como uma aula teórica.
+4) LINGUAGEM: Seja direto e clínico. Evite muletas como "isso pode indicar", "talvez". Arrisque uma leitura baseada na lógica interna do sonho e na resposta de ameaça/ansiedade percebida.
 
-REGRAS OBRIGATÓRIAS:
-1) NÃO descreva o sonho. Interprete.
-2) Proibido: “isso pode indicar”, “pode representar”, “talvez”, “em geral”, “normalmente”, “sugere que”.
-3) Não seja excessivamente positivo nem “consolador”.
-4) Não espiritualize demais nem racionalize demais.
-5) ARRISQUE uma leitura psicológica clara, mesmo que desconfortável.
-6) Use linguagem concreta: conflito, defesa, ambivalência, sombra, necessidade, fuga, controle.
+REQUISITOS DE CONTEÚDO:
+- "interpretationMain": Deve ser uma análise densa e fluida (mínimo 3 parágrafos profundos).
+- Conecte o símbolo ao conflito: O símbolo não é apenas uma imagem, é uma tentativa do inconsciente de regular uma tensão real.
+- Analise a "tensão central" do sonho e as decisões que o sonhador parece estar evitando na vigília.
 
-EXIGÊNCIA DE PROFUNDIDADE (não negociável):
-- "interpretationMain" deve ter 2 a 4 parágrafos REAIS, separados por linha em branco.
-- Cada parágrafo deve ter pelo menos 3 linhas (não 2 frases curtas).
-- Deve mencionar: (a) conflito central, (b) o que está sendo evitado, (c) o custo disso no presente.
-
-ESTRUTURA OBRIGATÓRIA DA RESPOSTA (JSON):
-Responda APENAS com JSON válido (sem markdown).
-
+ESTRUTURA DA RESPOSTA (JSON):
 {
-  "dreamTitle": "Título curto e impactante",
-  "interpretationMain": "2 a 4 parágrafos profundos (linha em branco entre parágrafos).",
+  "dreamTitle": "Título clínico e impactante",
+  "interpretationMain": "Análise profunda integrando conceitos psicológicos (\\n\\n entre parágrafos).",
   "symbols": [
-    { "name": "Símbolo", "meaning": "Significado psicológico específico, conectado ao conflito." }
+    { "name": "Símbolo", "meaning": "Significado específico na dinâmica do sonho." }
   ],
-  "emotions": ["mínimo 4 emoções específicas"],
-  "lifeAreas": ["mínimo 3 áreas afetadas"],
-  "advice": "Deve conter 3 ações concretas (24–72h) EM LISTA (1) 2) 3) ou -) e terminar com 1 pergunta de reflexão. Finalize com: 'Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.'",
-  "tags": ["6 a 10 tags curtas"],
+  "emotions": ["Emoções específicas percebidas"],
+  "lifeAreas": ["Áreas da vida afetadas pela dinâmica identificada"],
+  "advice": "Lista de 3 ações concretas (24-72h) para integrar o insight, finalizada com uma pergunta reflexiva.",
+  "tags": ["Tags psicológicas relevantes"],
   "language": "${language}"
 }
 
-IMPORTANTE:
-Responda estritamente no idioma: ${language}
+IMPORTANTE: Responda estritamente em ${language}. Sem markdown extra, apenas o JSON.
 `.trim();
 
     const userPrompt = `SONHO (texto bruto): ${dreamText}\nIDIOMA: ${language}`;
@@ -210,15 +214,12 @@ Responda estritamente no idioma: ${language}
             console.warn("[Backend] interpretDream veio raso/genérico. Executando 1 retry de correção...");
 
             const repairPrompt = `
-Você retornou um JSON que não atende aos requisitos.
-Corrija e retorne APENAS JSON válido com o MESMO schema.
-
-Checklist obrigatório:
-- interpretationMain: 2 a 4 parágrafos REAIS (linha em branco entre parágrafos), cada parágrafo com pelo menos 3 linhas.
-- Proibido usar: “pode indicar”, “pode representar”, “talvez”, “em geral”, “normalmente”, “sugere que”.
-- advice: conter 3 ações concretas (24–72h) em lista (1) 2) 3) ou -) e terminar com 1 pergunta de reflexão.
-- symbols >= 3, emotions >= 4, lifeAreas >= 3, tags 6–10.
-Idioma: ${language}
+O JSON anterior não atingiu a profundidade psicológica ou densidade técnica esperada.
+Por favor, refaça a análise garantindo:
+1) Uso de conceitos de Jung ou Psicodinâmica para explicar o mecanismo interno do sonho.
+2) Mínimo de 3 parágrafos densos em "interpretationMain".
+3) 3 ações práticas e uma pergunta reflexiva no "advice".
+Resposta em ${language}. APENAS JSON.
 `.trim();
 
             const response2 = await openaiClient.chat.completions.create({
@@ -229,7 +230,7 @@ Idioma: ${language}
                     { role: "assistant", content: JSON.stringify(result || {}) },
                     { role: "user", content: repairPrompt }
                 ],
-                temperature: 0.6
+                temperature: 0.55
             });
 
             const content2 = response2.choices?.[0]?.message?.content || "";
@@ -246,13 +247,31 @@ Idioma: ${language}
         }
 
         if (!isNonEmptyString(result.dreamTitle)) result.dreamTitle = "Sonho";
-        if (!isNonEmptyString(result.interpretationMain)) result.interpretationMain = "Interpretação indisponível no momento.";
-        if (!isNonEmptyString(result.advice)) {
+
+        // Se vier sem parágrafos, força formatação mínima (não muda sentido, só formata)
+        if (isNonEmptyString(result.interpretationMain) && countParagraphs(result.interpretationMain) < 2) {
+            // tenta quebrar em 4 blocos por pontuação como fallback suave
+            const t = result.interpretationMain.trim();
+            const parts = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+            if (parts.length >= 8) {
+                const p1 = parts.slice(0, 2).join(" ");
+                const p2 = parts.slice(2, 4).join(" ");
+                const p3 = parts.slice(4, 6).join(" ");
+                const p4 = parts.slice(6).join(" ");
+                result.interpretationMain = `${p1}\n\n${p2}\n\n${p3}\n\n${p4}`.trim();
+            }
+        }
+
+        if (!isNonEmptyString(result.interpretationMain)) {
+            result.interpretationMain = "Interpretação indisponível no momento.";
+        }
+
+        if (!isNonEmptyString(result.advice) || !adviceHas3ActionsAndQuestion(result.advice)) {
             result.advice =
-                "1) Escreva em 5 linhas o que você está evitando encarar.\n" +
-                "2) Escolha uma conversa ou ação pequena que você está adiando e marque para as próximas 48h.\n" +
-                "3) Reduza um comportamento de fuga (ex.: rolagem infinita/evitação) por 24h para observar a ansiedade.\n" +
-                "O que você sabe que precisa encarar, mas está empurrando para depois?\n" +
+                "1) Escreva em 8–10 linhas qual conflito você está evitando nomear, sem florear.\n" +
+                "2) Escolha UMA ação pequena que você está adiando e execute nas próximas 48h (mensagem, decisão, conversa, tarefa).\n" +
+                "3) Identifique sua principal fuga (ex.: evitar conversa, rolagem infinita, distração) e faça 24h de redução consciente observando a ansiedade.\n" +
+                "Qual decisão você sabe que precisa tomar, mas está empurrando por medo do que vai sentir depois?\n" +
                 "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.";
         }
 
@@ -261,6 +280,9 @@ Idioma: ${language}
             const base = ["inconsciente", "sombra", "conflito", "evitação", "ansiedade", "decisão", "autoconhecimento"];
             result.tags = Array.from(new Set([...ensureArray(result.tags), ...base])).slice(0, 10);
         }
+
+        // arrays mínimos finais
+        result = ensureMinArrays(result);
 
         return result;
 
@@ -408,34 +430,29 @@ async function generateGlobalAnalysis(dreams, language = "pt") {
         console.log(`[Backend] Enviando resumo de sonhos para OpenAI...`);
 
         const systemPrompt = `
-Você é um Analista Arquetípico Sênior + terapeuta de elite (clínico, direto, profundo, útil).
-Sua missão é analisar o histórico de sonhos e identificar a "Fase de Vida" / "Arco de Jornada" atual do usuário.
+Você é um Analista Arquetípico Sênior e Estrategista da Psique.
+Sua missão é identificar a "Fase de Vida" / "Arco de Jornada" do usuário com base no histórico de sonhos, usando psicologia profunda.
 
-REGRAS DE PROFUNDIDADE (não negociáveis):
-1) Seja específico e baseado em evidências do histórico (emoções recorrentes, temas, tensão central). Não use frases genéricas.
-2) "description" precisa ter 2 a 4 parágrafos REAIS (separados por linha em branco), cada parágrafo com pelo menos 3 linhas.
-3) Traga o eixo do conflito: desejo vs medo, impulso vs bloqueio, necessidade vs padrão.
-4) Mostre o risco (sombra) e o potencial (força) desta fase.
-5) "guidance" deve conter:
-   - 3 ações concretas (24–72h) em lista (marcadores ou 1) 2) 3))
-   - e terminar com 1 pergunta de reflexão.
-6) Não devolva campos vazios.
+DIRETRIZES:
+1) Identifique padrões de Sombra, Persona ou mecanismos de defesa recorrentes nos sonhos.
+2) Defina a fase atual de forma clínica, porém empoderadora (ex: Integração da Sombra, Fase de Confronto com a Persona, Processo de Individuação Ativo).
+3) A "description" deve ter entre 2 a 4 parágrafos densos, conectando os pontos emocionais do histórico.
+4) A "guidance" deve focar na transição de um padrão inconsciente (fuga/defesa) para uma ação consciente.
 
-RETORNE APENAS JSON VÁLIDO (sem markdown) com EXATAMENTE este schema:
+ESTRUTURA:
 {
-  "phaseTitle": "Título impactante da fase atual",
-  "phaseName": "Nome curto da fase (pode repetir phaseTitle se necessário)",
-  "archetype": "Arquétipo dominante (ex.: O Explorador, O Mago, O Órfão)",
-  "description": "Texto profundo em 2 a 4 parágrafos...",
-  "keyChallenges": ["3 a 6 desafios internos (curtos e específicos)"],
-  "strengths": ["3 a 6 forças/potenciais do momento (curtos e específicos)"],
-  "guidance": "Orientação prática com 3 ações (24–72h) + 1 pergunta no final.",
-  "tags": ["6 a 10 tags curtas"],
+  "phaseTitle": "Título impactante da fase",
+  "phaseName": "Nome curto da fase",
+  "archetype": "Arquétipo dominante (ex: O Mago, O Herói, O Órfão)",
+  "description": "Análise densa da jornada atual (\\n\\n entre parágrafos).",
+  "keyChallenges": ["Desafios específicos da fase"],
+  "strengths": ["Recursos internos disponíveis"],
+  "guidance": "3 ações práticas (24-72h) + 1 pergunta reflexiva.",
+  "tags": ["Tags de diagnóstico psicológico"],
   "language": "${language}"
 }
 
-IMPORTANTE:
-Responda estritamente no idioma: ${language}`.trim();
+IMPORTANTE: Responda estritamente em ${language}.`.trim();
 
         const userPrompt = `HISTÓRICO DE SONHOS (resumo):\n${JSON.stringify(dreamSummary, null, 2)}\n\nIDIOMA: ${language}`;
 
