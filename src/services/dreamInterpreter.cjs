@@ -83,22 +83,44 @@ function countParagraphs(text) {
         .filter(Boolean).length;
 }
 
-function hasTooGenericLanguage(text) {
+function ensureMinArrays(result) {
+    if (!result || typeof result !== "object") return result;
+
+    result.symbols = ensureArray(result.symbols);
+    result.emotions = ensureArray(result.emotions);
+    result.lifeAreas = ensureArray(result.lifeAreas);
+    result.tags = ensureArray(result.tags);
+
+    return result;
+}
+
+/**
+ * Detectores suaves (SEM travar a alma do texto):
+ * - Não proíbe palavras "naturais"; só evita resposta curta demais e genérica demais.
+ */
+function looksGenericOrThin(text) {
     if (!isNonEmptyString(text)) return true;
     const t = text.toLowerCase();
 
-    // sinais clássicos de genericão
+    // se for muito curto, quase sempre é raso
+    if (t.length < 420) return true;
+
+    // sinais fortes de "texto internet"
     const genericHits = [
-        "sugere que",
-        "isso pode",
+        "este sonho sugere",
+        "este sonho indica",
         "pode indicar",
         "talvez",
         "em geral",
         "normalmente",
         "geralmente",
-        "pode representar"
+        "simboliza"
     ];
-    return genericHits.some(g => t.includes(g));
+
+    const hits = genericHits.reduce((acc, g) => (t.includes(g) ? acc + 1 : acc), 0);
+
+    // NÃO é bloqueio absoluto; é só um sinal
+    return hits >= 3;
 }
 
 function adviceHas3ActionsAndQuestion(advice) {
@@ -118,20 +140,11 @@ function adviceHas3ActionsAndQuestion(advice) {
     return ((bullets >= 3 || numbered >= 3 || has3ActionLines) && hasQuestion);
 }
 
-function ensureMinArrays(result) {
-    if (!result || typeof result !== "object") return result;
-
-    result.symbols = ensureArray(result.symbols);
-    result.emotions = ensureArray(result.emotions);
-    result.lifeAreas = ensureArray(result.lifeAreas);
-    result.tags = ensureArray(result.tags);
-
-    return result;
-}
-
 /**
- * Interpretação PREMIUM: profundidade real e formato consistente.
- * Regras fortes para resolver o problema "Count=1" e o texto raso.
+ * Qualidade "como definimos":
+ * - Profundo, junguiano quando fizer sentido, técnico sem aula.
+ * - Sem rigidez matemática: 2–3 parágrafos REAIS (com linha em branco).
+ * - Advice acionável: 3 ações (24–72h) + 1 pergunta.
  */
 function meetsInterpretationQuality(result) {
     if (!result || typeof result !== "object") return false;
@@ -139,57 +152,94 @@ function meetsInterpretationQuality(result) {
     const interpretationMain = result.interpretationMain;
     const advice = result.advice;
 
-    // ✅ Validação de densidade mínima (pelo menos 3 parágrafos reais)
-    const paragraphsOk = countParagraphs(interpretationMain) >= 3;
-
-    // ✅ advice: pelo menos 3 ações e uma pergunta
+    const paragraphsOk = countParagraphs(interpretationMain) >= 2; // 2+ parágrafos reais
     const adviceOk = adviceHas3ActionsAndQuestion(advice);
 
-    // ✅ anti-vagueza (não pode ser puramente genérico)
-    const notGeneric = isNonEmptyString(interpretationMain) && interpretationMain.length > 400;
+    // conteúdo: evita raso e genérico
+    const contentOk = !looksGenericOrThin(interpretationMain);
 
-    // ✅ schema mínimo (garantir que arrays existam)
+    // schema mínimo (sem inflar)
     const arraysOk =
-        ensureArray(result.symbols).length >= 2 &&
-        ensureArray(result.emotions).length >= 3;
+        ensureArray(result.symbols).length >= 3 &&
+        ensureArray(result.emotions).length >= 4 &&
+        ensureArray(result.lifeAreas).length >= 3;
 
-    return paragraphsOk && adviceOk && notGeneric && arraysOk;
+    return paragraphsOk && adviceOk && contentOk && arraysOk;
+}
+
+/**
+ * Formatação suave:
+ * Se veio tudo num bloco, tenta inserir \n\n em pontos naturais.
+ * Não muda sentido. Só melhora a separação visual e a contagem.
+ */
+function enforceParagraphBreaksSoft(text) {
+    if (!isNonEmptyString(text)) return text;
+    if (countParagraphs(text) >= 2) return text;
+
+    const t = text.trim();
+
+    // Quebra por sentenças e reagrupa em 3 parágrafos (se der)
+    const sentences = t.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+
+    if (sentences.length < 6) return t; // muito curto, não inventa quebra
+
+    const third = Math.ceil(sentences.length / 3);
+    const p1 = sentences.slice(0, third).join(" ");
+    const p2 = sentences.slice(third, third * 2).join(" ");
+    const p3 = sentences.slice(third * 2).join(" ");
+
+    return `${p1}\n\n${p2}\n\n${p3}`.trim();
 }
 
 async function interpretDream(dreamText, language = "pt") {
     const model = resolveModel();
 
-    // Prompt principal (mais exigente, junguiano e anti-genérico)
+    // Prompt: profundo + com liberdade; sem checklist que mata a escrita
     const systemPrompt = `
-Você é um Analista Clínico de Sonhos especializado em Psicologia Analítica (Carl Jung) e Psicodinâmica Moderna.
-Sua missão é fornecer interpretações de ALTO NÍVEL, objetivas e cientificamente embasadas.
+Você é uma equipe clínica de interpretação de sonhos (nível terapeuta sênior), especializada em Psicologia Analítica (Carl Jung) e Psicodinâmica contemporânea.
 
-DIRETRIZES TÉCNICAS:
-1) ABORDAGEM JUNGUIANA: Use conceitos como Sombra, Persona, Compensação, Individuação ou Projeção apenas quando houver evidência clara nos símbolos ou narrativa. Não force a teoria.
-2) PSICODINÂMICA: Identifique mecanismos de defesa (evitação, racionalização, dissociação), ambivalência emocional, e padrões de compulsão à repetição.
-3) CLAREZA OBJETIVA: Não use jargão vazio. Os conceitos técnicos devem servir como ferramentas de clareza para o sonhador, não como uma aula teórica.
-4) LINGUAGEM: Seja direto e clínico. Evite muletas como "isso pode indicar", "talvez". Arrisque uma leitura baseada na lógica interna do sonho e na resposta de ameaça/ansiedade percebida.
+OBJETIVO:
+Entregar uma interpretação profunda, útil e tecnicamente consistente, sem fantasiar. Você deve tratar o sonho como um material do inconsciente que tenta regular uma tensão real (conflito, defesa, desejo, medo).
 
-REQUISITOS DE CONTEÚDO:
-- "interpretationMain": Deve ser uma análise densa e fluida (mínimo 3 parágrafos profundos).
-- Conecte o símbolo ao conflito: O símbolo não é apenas uma imagem, é uma tentativa do inconsciente de regular uma tensão real.
-- Analise a "tensão central" do sonho e as decisões que o sonhador parece estar evitando na vigília.
+COMO VOCÊ TRABALHA (estilo):
+- Clínico, direto, com humanidade. Nada de texto “internet”.
+- Use Jung com precisão (Sombra, Persona, Complexos, Compensação, Projeção, Individuação) SOMENTE quando o sonho sustentar. Não force teoria.
+- Use psicodinâmica para dar clareza (evitação, controle, ambivalência, culpa, dissociação, compulsão à repetição, conflito de aproximação-evitação).
+- Não dê aula. Conceito só entra se iluminar a dinâmica do sonho.
 
-ESTRUTURA DA RESPOSTA (JSON):
+O QUE NÃO PODE:
+- Inventar fatos sobre a vida do usuário.
+- Romantizar / espiritualizar sem base.
+- Fazer “palestra motivacional”.
+
+REQUISITOS DE QUALIDADE (sem rigidez burra):
+- "interpretationMain" deve ter 2 ou 3 parágrafos REAIS, separados por linha em branco (\\n\\n).
+- Cada parágrafo precisa avançar a análise, não repetir.
+- A análise precisa conter:
+  (1) tensão central (desejo vs medo / impulso vs defesa),
+  (2) o que está sendo evitado ou mantido trancado,
+  (3) o custo disso na vida desperta (ansiedade, repetição, bloqueio, conflito).
+
+ADVICE (obrigatório):
+- 3 ações concretas para 24–72h EM LISTA (1) 2) 3) ou -)
+- Finaliza com 1 pergunta de reflexão
+- Termina com: "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells."
+
+FORMATO (JSON apenas, sem markdown):
 {
-  "dreamTitle": "Título clínico e impactante",
-  "interpretationMain": "Análise profunda integrando conceitos psicológicos (\\n\\n entre parágrafos).",
+  "dreamTitle": "Título curto e impactante",
+  "interpretationMain": "2–3 parágrafos, \\n\\n entre eles",
   "symbols": [
-    { "name": "Símbolo", "meaning": "Significado específico na dinâmica do sonho." }
+    { "name": "Símbolo", "meaning": "Significado psicológico específico ligado à tensão central" }
   ],
-  "emotions": ["Emoções específicas percebidas"],
-  "lifeAreas": ["Áreas da vida afetadas pela dinâmica identificada"],
-  "advice": "Lista de 3 ações concretas (24-72h) para integrar o insight, finalizada com uma pergunta reflexiva.",
-  "tags": ["Tags psicológicas relevantes"],
+  "emotions": ["mínimo 4 emoções específicas (ex.: vigilância, culpa, impotência, raiva contida...)"],
+  "lifeAreas": ["mínimo 3 áreas (ex.: relacionamento, trabalho, identidade, decisões, saúde emocional...)"],
+  "advice": "3 ações (24–72h) + pergunta final + frase DreamTells",
+  "tags": ["6 a 10 tags curtas"],
   "language": "${language}"
 }
 
-IMPORTANTE: Responda estritamente em ${language}. Sem markdown extra, apenas o JSON.
+Responda estritamente no idioma: ${language}
 `.trim();
 
     const userPrompt = `SONHO (texto bruto): ${dreamText}\nIDIOMA: ${language}`;
@@ -201,25 +251,31 @@ IMPORTANTE: Responda estritamente em ${language}. Sem markdown extra, apenas o J
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
             ],
-            temperature: 0.7
+            temperature: 0.75
         });
 
         const content = response.choices?.[0]?.message?.content || "";
-        let result = safeJsonParse(content);
-        result = ensureMinArrays(result);
+        let result = ensureMinArrays(safeJsonParse(content));
+
         if (result && typeof result === "object" && !result.language) result.language = language;
 
-        // ✅ Se veio raso/genérico/incompleto => 1 retry controlado
+        // formatação suave pra evitar Count=1
+        if (result && typeof result === "object" && isNonEmptyString(result.interpretationMain)) {
+            result.interpretationMain = enforceParagraphBreaksSoft(result.interpretationMain);
+        }
+
+        // ✅ Retry inteligente (só se realmente estiver raso/sem formato/sem advice acionável)
         if (!meetsInterpretationQuality(result)) {
-            console.warn("[Backend] interpretDream veio raso/genérico. Executando 1 retry de correção...");
+            console.warn("[Backend] interpretDream veio raso/incompleto. Executando 1 retry inteligente...");
 
             const repairPrompt = `
-O JSON anterior não atingiu a profundidade psicológica ou densidade técnica esperada.
-Por favor, refaça a análise garantindo:
-1) Uso de conceitos de Jung ou Psicodinâmica para explicar o mecanismo interno do sonho.
-2) Mínimo de 3 parágrafos densos em "interpretationMain".
-3) 3 ações práticas e uma pergunta reflexiva no "advice".
-Resposta em ${language}. APENAS JSON.
+Refaça a resposta mantendo o MESMO schema JSON.
+Aprimore SUBSTÂNCIA (não encha linguiça) e garanta:
+- interpretationMain com 2–3 parágrafos reais (\\n\\n)
+- Conecte símbolos à tensão central + defesa psicológica + custo na vida desperta
+- Advice com 3 ações (24–72h) EM LISTA + 1 pergunta final + frase DreamTells
+- Sem inventar fatos sobre a vida do usuário
+Idioma: ${language}
 `.trim();
 
             const response2 = await openaiClient.chat.completions.create({
@@ -230,15 +286,19 @@ Resposta em ${language}. APENAS JSON.
                     { role: "assistant", content: JSON.stringify(result || {}) },
                     { role: "user", content: repairPrompt }
                 ],
-                temperature: 0.55
+                temperature: 0.65
             });
 
             const content2 = response2.choices?.[0]?.message?.content || "";
             const repaired = ensureMinArrays(safeJsonParse(content2));
-            if (repaired && typeof repaired === "object" && !repaired.language) repaired.language = language;
 
-            // se ainda assim não bateu tudo, devolve repaired (melhor que nada) sem quebrar schema
-            result = repaired || result;
+            if (repaired && typeof repaired === "object") {
+                if (!repaired.language) repaired.language = language;
+                if (isNonEmptyString(repaired.interpretationMain)) {
+                    repaired.interpretationMain = enforceParagraphBreaksSoft(repaired.interpretationMain);
+                }
+                result = repaired;
+            }
         }
 
         // ✅ Garantias finais de schema (sem quebrar front)
@@ -247,42 +307,40 @@ Resposta em ${language}. APENAS JSON.
         }
 
         if (!isNonEmptyString(result.dreamTitle)) result.dreamTitle = "Sonho";
+        if (!isNonEmptyString(result.interpretationMain)) result.interpretationMain = "Interpretação indisponível no momento.";
 
-        // Se vier sem parágrafos, força formatação mínima (não muda sentido, só formata)
-        if (isNonEmptyString(result.interpretationMain) && countParagraphs(result.interpretationMain) < 2) {
-            // tenta quebrar em 4 blocos por pontuação como fallback suave
-            const t = result.interpretationMain.trim();
-            const parts = t.split(/(?<=[.!?])\s+/).filter(Boolean);
-            if (parts.length >= 8) {
-                const p1 = parts.slice(0, 2).join(" ");
-                const p2 = parts.slice(2, 4).join(" ");
-                const p3 = parts.slice(4, 6).join(" ");
-                const p4 = parts.slice(6).join(" ");
-                result.interpretationMain = `${p1}\n\n${p2}\n\n${p3}\n\n${p4}`.trim();
+        // advice fallback (garante formato)
+        if (!isNonEmptyString(result.advice) || !adviceHas3ActionsAndQuestion(result.advice)) {
+            result.advice =
+                "1) Escreva em 10 linhas qual é a tensão central do seu momento (o que você quer vs o que você teme perder).\n" +
+                "2) Escolha UMA decisão evitada e faça um micro-passo em 48h (mensagem, conversa, definição de limite, tarefa).\n" +
+                "3) Observe por 24h quando surge a vontade de fugir (distração/adiamento) e anote o gatilho + a emoção exata.\n" +
+                "O que você está protegendo ao evitar encarar isso — e qual preço você está pagando por essa proteção?\n" +
+                "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.";
+        } else {
+            // garante frase final do método, sem duplicar se já tiver
+            if (!result.advice.includes("Método de Interpretação Profunda DreamTells")) {
+                result.advice = `${result.advice.trim()}\nEsta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.`;
             }
         }
 
-        if (!isNonEmptyString(result.interpretationMain)) {
-            result.interpretationMain = "Interpretação indisponível no momento.";
-        }
+        // arrays mínimos finais (sem inflar demais)
+        result = ensureMinArrays(result);
 
-        if (!isNonEmptyString(result.advice) || !adviceHas3ActionsAndQuestion(result.advice)) {
-            result.advice =
-                "1) Escreva em 8–10 linhas qual conflito você está evitando nomear, sem florear.\n" +
-                "2) Escolha UMA ação pequena que você está adiando e execute nas próximas 48h (mensagem, decisão, conversa, tarefa).\n" +
-                "3) Identifique sua principal fuga (ex.: evitar conversa, rolagem infinita, distração) e faça 24h de redução consciente observando a ansiedade.\n" +
-                "Qual decisão você sabe que precisa tomar, mas está empurrando por medo do que vai sentir depois?\n" +
-                "Esta orientação foi gerada pelo Método de Interpretação Profunda DreamTells.";
+        // mínimos tolerantes (sem inventar demais; só garante estabilidade do front)
+        if (ensureArray(result.symbols).length < 3) result.symbols = ensureArray(result.symbols).slice(0, 3);
+        if (ensureArray(result.emotions).length < 4) {
+            const base = ["ansiedade", "vigilância", "medo", "tensão"];
+            result.emotions = Array.from(new Set([...ensureArray(result.emotions), ...base])).slice(0, 6);
         }
-
-        // tags fallback
+        if (ensureArray(result.lifeAreas).length < 3) {
+            const base = ["emocional", "decisões", "identidade"];
+            result.lifeAreas = Array.from(new Set([...ensureArray(result.lifeAreas), ...base])).slice(0, 6);
+        }
         if (ensureArray(result.tags).length < 6) {
-            const base = ["inconsciente", "sombra", "conflito", "evitação", "ansiedade", "decisão", "autoconhecimento"];
+            const base = ["inconsciente", "tensão", "defesa", "sombra", "decisão", "autoconhecimento", "ansiedade"];
             result.tags = Array.from(new Set([...ensureArray(result.tags), ...base])).slice(0, 10);
         }
-
-        // arrays mínimos finais
-        result = ensureMinArrays(result);
 
         return result;
 
