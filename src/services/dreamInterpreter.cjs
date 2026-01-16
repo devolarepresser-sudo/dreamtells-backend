@@ -199,6 +199,7 @@ function enforceParagraphBreaksSoft(text) {
 
 async function interpretDream(dreamText, language = "pt") {
     const model = resolveModel();
+    console.log('[Backend] interpretDream ACTIVE dreamInterpreter.cjs vDepth');
 
     // Prompt: profundo + com liberdade; sem checklist que mata a escrita
     const systemPrompt = `
@@ -358,6 +359,7 @@ Idioma: ${language}
 
 async function generateDeepQuestions(dreamText, language = "pt") {
     const model = resolveModel();
+    console.log('[Backend] interpretDream ACTIVE dreamInterpreter.cjs vDepth');
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -398,6 +400,7 @@ REGRAS:
 
 async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswers, language = "pt") {
     const model = resolveModel();
+    console.log('[Backend] interpretDream ACTIVE dreamInterpreter.cjs vDepth');
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -478,6 +481,7 @@ function guidanceHas3ActionsAndQuestion(guidance) {
 
 async function generateGlobalAnalysis(dreams, language = "pt") {
     const model = resolveModel();
+    console.log('[Backend] interpretDream ACTIVE dreamInterpreter.cjs vDepth');
     console.log(`[Backend] Iniciando Análise Global com ${dreams.length} sonhos usando modelo: ${model} e idioma: ${language}`);
 
     try {
