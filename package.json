@@ -1,10 +1,11 @@
 {
   "name": "dreamtells-backend",
   "version": "1.0.0",
-  "main": "src/index.js",
-  "type": "module",
+  "main": "app.cjs",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node app.cjs",
+    "dev": "node app.cjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
