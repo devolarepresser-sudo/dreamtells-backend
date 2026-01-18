@@ -21,6 +21,12 @@ if (fs.existsSync(envPath)) {
 const app = express();
 const port = process.env.PORT || 10000;
 
+// GLOBAL DAILY CACHE
+let globalDailyCache = {
+    date: null,
+    oracle: null
+};
+
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
@@ -113,19 +119,30 @@ app.post("/api/emotional-diagnosis", async (req, res) => {
     }
 });
 
-// ✅ Mensagem do Dia (Nova Feature)
+// ✅ Mensagem do Dia (Oráculo Arquetípico)
 app.post("/api/daily-message", async (req, res) => {
     try {
-        const { language = "pt", dreams = [] } = req.body;
-        const response = await openaiClient.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: "Gere uma mensagem do dia curta e profunda baseada no inconsciente." },
-                { role: "user", content: `Idioma: ${language}, Sonhos: ${JSON.stringify(dreams)}` }
-            ]
-        });
-        res.json({ success: true, message: response.choices[0].message.content.trim() });
+        const { language = "pt" } = req.body;
+        const today = new Date().toDateString();
+
+        // Verifica Cache
+        if (globalDailyCache.date === today && globalDailyCache.oracle) {
+            console.log("[CACHE] Retornando Oráculo do dia já gerado.");
+            return res.json({ success: true, data: globalDailyCache.oracle, message: globalDailyCache.oracle.reflection });
+        }
+
+        const { generateDailyOracle } = require("./src/services/dreamInterpreter.cjs");
+        const oracle = await generateDailyOracle(language);
+
+        // Atualiza Cache
+        globalDailyCache = {
+            date: today,
+            oracle: oracle
+        };
+
+        res.json({ success: true, data: oracle, message: oracle.reflection });
     } catch (e) {
+        console.error("[ORACLE ERROR]", e.message);
         res.status(500).json({ error: e.message });
     }
 });

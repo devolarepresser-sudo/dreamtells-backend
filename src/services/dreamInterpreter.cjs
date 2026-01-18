@@ -280,4 +280,43 @@ async function analyzeSymbol(symbol, userId, language = "pt") {
     }
 }
 
-module.exports = { interpretDream, generateDeepQuestions, generateDeepAnalysis, generateGlobalAnalysis, analyzeSymbol };
+// 6. ORÁCULO DIÁRIO (Mensagem do Dia Profunda)
+async function generateDailyOracle(language = "pt") {
+    const model = resolveModel();
+    const systemPrompt = `Você é um Terapeuta Junguiano e Analista Arquetípico Sênior.
+MISSÃO: Gerar uma "Semente de Sabedoria" para o dia.
+QUALIDADE: O texto deve ser digno de um "Uau!", profundo, poético e clinicamente útil, como se um psicólogo estivesse dando um insight transformador para o dia.
+REGRAS:
+1. NÃO seja genérico (evite frases de efeito baratas).
+2. Use analogias da natureza ou alquimia.
+3. Foque em um tema universal (Sombra, Persona, Anima, Crescimento, Resistência).
+
+ESTRUTURA JSON (OBRIGATÓRIO):
+{
+  "title": "Título Oracular",
+  "reflection": "Um parágrafo denso e transformador (mínimo 400 caracteres).",
+  "practice": "Uma pequena tarefa de atenção plena ou observação para o dia.",
+  "archetype": "Arquétipo regente do dia"
+}
+Idioma: ${language}`;
+
+    try {
+        const response = await openaiClient.chat.completions.create({
+            model,
+            messages: [{ role: "system", content: systemPrompt }],
+            temperature: 0.85,
+            response_format: { type: "json_object" }
+        });
+        return safeJsonParse(response.choices[0].message.content);
+    } catch (e) {
+        console.error("Erro generateDailyOracle:", e);
+        return {
+            title: "O Silêncio Fecundo",
+            reflection: "Às vezes, o crescimento ocorre no escuro, antes que qualquer broto rompa a superfície. Honre a pausa.",
+            practice: "Observe um momento de silêncio antes de falar pela primeira vez hoje.",
+            archetype: "O Eremita"
+        };
+    }
+}
+
+module.exports = { interpretDream, generateDeepQuestions, generateDeepAnalysis, generateGlobalAnalysis, analyzeSymbol, generateDailyOracle };
