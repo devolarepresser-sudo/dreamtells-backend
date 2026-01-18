@@ -22,7 +22,7 @@ function safeJsonParse(raw) {
         return JSON.parse(s);
     } catch (e) {
         console.error("[Backend] Falha grave no parsing do JSON:", e);
-        throw e;
+        throw new Error(`Resposta inválida da IA: ${e.message}`);
     }
 }
 
@@ -65,6 +65,10 @@ function adviceHas3ActionsAndQuestion(advice) {
     return (bullets >= 3 || numbered >= 3) && hasQuestion;
 }
 
+function guidanceHas3ActionsAndQuestion(guidance) {
+    return adviceHas3ActionsAndQuestion(guidance);
+}
+
 function meetsInterpretationQuality(result) {
     if (!result || typeof result !== "object") return false;
     const interpretationMain = result.interpretationMain;
@@ -89,22 +93,23 @@ function enforceParagraphBreaksSoft(text) {
     return `${p1}\n\n${p2}\n\n${p3}`.trim();
 }
 
+// 1. Interpretação Principal
 async function interpretDream(dreamText, language = "pt") {
     const model = resolveModel();
-    const systemPrompt = `Você é uma equipe clínica de interpretação de sonhos (terapeuta sênior), com base em Psicologia Analítica (Jung).
-    MISSÃO: Gerar uma interpretação profunda (D.D.I.P.), tratando o sonho como material do inconsciente.
-    REGRAS: 1 hipótese central + 1 alternativa, nomeie uma defesa psicológica, conecte símbolos à tensão.
-    FORMATO JSON: {
-      "dreamTitle": "...",
-      "interpretationMain": "2-3 parágrafos profundos (mínimo 900 caracteres)",
-      "symbols": [{"name":"", "meaning":""}],
-      "emotions": [],
-      "lifeAreas": [],
-      "advice": "3 ações em lista + 1 pergunta + frase DreamTells",
-      "tags": [],
-      "language": "${language}"
-    }
-    Responda em: ${language}`;
+    const systemPrompt = `Você é uma equipe clínica de interpretação de sonhos (terapeuta sênior), com base em Psicologia Analítica (Jung) e Psicodinâmica contemporânea.
+MISSÃO: Gerar uma interpretação profunda (D.D.I.P.), tratando o sonho como material do inconsciente.
+REGRAS: 1 hipótese central + 1 alternativa, nomeie uma defesa psicológica, conecte símbolos à tensão.
+FORMATO JSON (OBRIGATÓRIO): {
+  "dreamTitle": "...",
+  "interpretationMain": "2-3 parágrafos profundos (mínimo 900 caracteres)",
+  "symbols": [{"name":"", "meaning":""}],
+  "emotions": [],
+  "lifeAreas": [],
+  "advice": "3 ações em lista + 1 pergunta + frase DreamTells",
+  "tags": [],
+  "language": "${language}"
+}
+Responda em: ${language}`;
 
     try {
         const response = await openaiClient.chat.completions.create({
@@ -115,7 +120,7 @@ async function interpretDream(dreamText, language = "pt") {
         let result = ensureMinArrays(safeJsonParse(response.choices[0].message.content));
 
         if (!meetsInterpretationQuality(result)) {
-            const repairPrompt = `Refaça com mais PROFUNDIDADE. Garanta 2-3 parágrafos reais e 3 ações práticas.`;
+            const repairPrompt = `Refaça com mais PROFUNDIDADE. Garanta 2-3 parágrafos reais (mínimo 900 chars) e 3 ações práticas em lista. Retorne APENAS JSON.`;
             const response2 = await openaiClient.chat.completions.create({
                 model,
                 messages: [
@@ -138,49 +143,108 @@ async function interpretDream(dreamText, language = "pt") {
     }
 }
 
+// 2. Perguntas Iniciais
 async function generateDeepQuestions(dreamText, language = "pt") {
     const model = resolveModel();
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                { role: "system", content: `Gere 6 perguntas profundas junguianas. Idioma: ${language}` },
+                {
+                    role: "system",
+                    content: `Você é um terapeuta junguiano. Gere exatamente 6 perguntas profundas de autoconhecimento. Retorne APENAS JSON: { "questions": ["...", "..."] }. Idioma: ${language}`
+                },
                 { role: "user", content: dreamText }
             ]
         });
         const json = safeJsonParse(response.choices[0].message.content);
         return json.questions || [];
-    } catch (e) { return ["Como você se sente?"]; }
+    } catch (e) { return ["Como você se sente com esse sonho?"]; }
 }
 
+// 3. ANÁLISE PROFUNDA (FIX: Restoring Robust Prompt and JSON structure)
 async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswers, language = "pt") {
     const model = resolveModel();
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                { role: "system", content: `Análise Shadow Work profunda. Conecte tudo. Idioma: ${language}` },
-                { role: "user", content: JSON.stringify({ dreamText, initialInterpretation, userAnswers }) }
-            ]
+                {
+                    role: "system",
+                    content: `Você é um analista especializado em Shadow Work e Psicologia Analítica.
+MISSÃO: Produzir uma análise profunda que vá ALÉM da interpretação inicial, integrando sonho, interpretação inicial e respostas do usuário.
+REGRAS CRÍTICAS: NÃO repita a interpretação. NÃO suavize conflitos. Seja específico e confrontativo.
+ESTRUTURA OBRIGATÓRIA (JSON apenas):
+{
+  "deepInsights": [
+    { "title": "Nome do insight", "content": "Texto profundo em markdown." }
+  ],
+  "patterns": ["Padrão identificado"],
+  "finalIntegration": "Síntese prática consciente."
+}
+Idioma: ${language}`
+                },
+                {
+                    role: "user",
+                    content: JSON.stringify({ dreamText, initialInterpretation, userAnswers })
+                }
+            ],
+            temperature: 0.7
         });
-        return safeJsonParse(response.choices[0].message.content);
-    } catch (e) { throw e; }
+        const content = response.choices[0].message.content;
+        return safeJsonParse(content);
+    } catch (e) {
+        console.error("Erro generateDeepAnalysis:", e);
+        throw e;
+    }
 }
 
+// 4. ANÁLISE GLOBAL (FIX: Restoring Robust Prompt)
 async function generateGlobalAnalysis(dreams, language = "pt") {
     const model = resolveModel();
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                { role: "system", content: `Analista Arquetípico. Identifique a Fase de Vida. JSON: {phaseTitle, archetype, description(densos parágrafos), guidance(3 ações), tags}. Idioma: ${language}` },
+                {
+                    role: "system",
+                    content: `Você é um Analista Arquetípico Sênior. Sua missão é identificar a "Fase de Vida" do usuário baseada no histórico de sonhos.
+ESTRUTURA JSON (OBRIGATÓRIO):
+{
+  "phaseTitle": "Título impactante",
+  "phaseName": "Nome da fase",
+  "archetype": "Arquétipo",
+  "description": "Análise densa de 2-4 parágrafos.",
+  "keyChallenges": [],
+  "strengths": [],
+  "guidance": "3 ações + 1 pergunta.",
+  "tags": [],
+  "language": "${language}"
+}
+Idioma: ${language}`
+                },
                 { role: "user", content: JSON.stringify(dreams) }
-            ]
+            ],
+            temperature: 0.7
         });
-        return safeJsonParse(response.choices[0].message.content);
-    } catch (e) { throw e; }
+        let result = safeJsonParse(response.choices[0].message.content);
+
+        // Normalização mínima
+        if (result && typeof result === "object") {
+            if (!result.phaseName && result.phaseTitle) result.phaseName = result.phaseTitle;
+            result.keyChallenges = ensureArray(result.keyChallenges);
+            result.strengths = ensureArray(result.strengths);
+            result.tags = ensureArray(result.tags);
+        }
+
+        return result;
+    } catch (e) {
+        console.error("Erro generateGlobalAnalysis:", e);
+        throw e;
+    }
 }
 
+// 5. ANÁLISE DE SÍMBOLO
 async function analyzeSymbol(symbol, userId, language = "pt") {
     const model = resolveModel();
     try {
