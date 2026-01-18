@@ -65,6 +65,11 @@ app.post("/api/analyze-deep", async (req, res) => {
     app.handle(req, res);
 });
 
+app.post("/api/analyze-symbol", async (req, res) => {
+    req.url = "/api/dreams/analyze-symbol";
+    app.handle(req, res);
+});
+
 // ✅ Análise Global (Play Store)
 app.post("/api/global-analysis", async (req, res) => {
     try {

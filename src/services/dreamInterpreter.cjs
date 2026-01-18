@@ -181,4 +181,20 @@ async function generateGlobalAnalysis(dreams, language = "pt") {
     } catch (e) { throw e; }
 }
 
-module.exports = { interpretDream, generateDeepQuestions, generateDeepAnalysis, generateGlobalAnalysis };
+async function analyzeSymbol(symbol, userId, language = "pt") {
+    const model = resolveModel();
+    try {
+        const response = await openaiClient.chat.completions.create({
+            model,
+            messages: [
+                { role: "system", content: `Você é um dicionário de símbolos psicológicos. Explique o símbolo de forma profunda. Idioma: ${language}` },
+                { role: "user", content: `Símbolo: ${symbol}` }
+            ]
+        });
+        return response.choices[0].message.content.trim();
+    } catch (e) {
+        return `O símbolo "${symbol}" representa processos de transformação do inconsciente.`;
+    }
+}
+
+module.exports = { interpretDream, generateDeepQuestions, generateDeepAnalysis, generateGlobalAnalysis, analyzeSymbol };

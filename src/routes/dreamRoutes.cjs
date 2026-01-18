@@ -3,10 +3,21 @@ const {
     interpretDream,
     generateDeepQuestions,
     generateDeepAnalysis,
-    generateGlobalAnalysis
+    generateGlobalAnalysis,
+    analyzeSymbol
 } = require("../services/dreamInterpreter.cjs");
 
 const router = Router();
+
+router.post("/analyze-symbol", async (req, res) => {
+    try {
+        const { symbol, userId, language = "pt" } = req.body;
+        const result = await analyzeSymbol(symbol, userId, language);
+        return res.json({ analysis: result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 router.post("/interpret", async (req, res) => {
     try {
