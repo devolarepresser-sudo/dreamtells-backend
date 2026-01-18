@@ -41,6 +41,8 @@ function ensureMinArrays(result) {
 
 async function interpretDream(dreamText, language = "pt") {
     const model = resolveModel();
+    console.log("[Backend] interpretDream ACTIVE dreamInterpreter.cjs");
+
     const systemPrompt = `Você é o interpretador oficial do DreamTells. Produza uma interpretação profunda (D.D.I.P.).
     Retorne JSON: {
       "dreamTitle": "...",
@@ -86,7 +88,7 @@ async function generateDeepQuestions(dreamText, language = "pt") {
         const json = safeJsonParse(response.choices[0].message.content);
         return json.questions || [];
     } catch (error) {
-        return ["Como você se sentiu?"];
+        return ["Como você se sentiu com esse sonho?"];
     }
 }
 
@@ -96,7 +98,7 @@ async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswer
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                { role: "system", content: `Análise profunda Shadow Work. Idioma: ${language}` },
+                { role: "system", content: `Análise profunda Shadow Work. Conecte o sonho com as respostas do usuário. Idioma: ${language}` },
                 { role: "user", content: JSON.stringify({ dreamText, initialInterpretation, userAnswers }) }
             ],
             temperature: 0.7
@@ -109,11 +111,12 @@ async function generateDeepAnalysis(dreamText, initialInterpretation, userAnswer
 
 async function generateGlobalAnalysis(dreams, language = "pt") {
     const model = resolveModel();
+    console.log(`[Backend] Iniciando Análise Global com ${dreams.length} sonhos.`);
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [
-                { role: "system", content: `Análise de Fase de Vida (Global). Idioma: ${language}` },
+                { role: "system", content: `Análise de Fase de Vida (Global) baseada no histórico de sonhos. Idioma: ${language}` },
                 { role: "user", content: JSON.stringify(dreams) }
             ],
             temperature: 0.7
