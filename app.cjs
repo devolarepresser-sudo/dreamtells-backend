@@ -55,6 +55,16 @@ app.post("/api/interpretarSonho", async (req, res) => {
     }
 });
 
+app.post("/api/deep-questions", async (req, res) => {
+    req.url = "/api/dreams/deep-questions";
+    app.handle(req, res);
+});
+
+app.post("/api/analyze-deep", async (req, res) => {
+    req.url = "/api/dreams/analyze-deep";
+    app.handle(req, res);
+});
+
 // ✅ Análise Global (Play Store)
 app.post("/api/global-analysis", async (req, res) => {
     try {
