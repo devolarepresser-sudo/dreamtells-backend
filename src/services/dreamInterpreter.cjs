@@ -10,18 +10,32 @@ function resolveModel() {
 function safeJsonParse(raw) {
     if (!raw || typeof raw !== "string") return raw;
     try {
+        // Limpeza agressiva
         let s = raw.trim()
             .replace(/^```(?:json)?\s*/i, "")
             .replace(/```$/i, "")
             .trim();
+
+        // Tenta encontrar o primeiro { e o último }
         const firstBrace = s.indexOf("{");
         const lastBrace = s.lastIndexOf("}");
+
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
             s = s.slice(firstBrace, lastBrace + 1);
         }
+
         return JSON.parse(s);
     } catch (e) {
         console.error("[Backend] Falha grave no parsing do JSON:", e);
+        console.error("[Backend] Conteúdo bruto recebido:", raw);
+        // Fallback: se não for JSON, tenta transformar o texto em um objeto básico
+        if (raw.length > 50) {
+            return {
+                dreamTitle: "Sonho",
+                interpretationMain: raw,
+                advice: "Tente refletir sobre esses pontos."
+            };
+        }
         throw new Error(`Resposta inválida da IA: ${e.message}`);
     }
 }
@@ -115,7 +129,8 @@ Responda em: ${language}`;
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: dreamText }],
-            temperature: 0.82
+            temperature: 0.82,
+            response_format: { type: "json_object" }
         });
         let result = ensureMinArrays(safeJsonParse(response.choices[0].message.content));
 
@@ -129,7 +144,8 @@ Responda em: ${language}`;
                     { role: "assistant", content: JSON.stringify(result) },
                     { role: "user", content: repairPrompt }
                 ],
-                temperature: 0.68
+                temperature: 0.68,
+                response_format: { type: "json_object" }
             });
             result = ensureMinArrays(safeJsonParse(response2.choices[0].message.content));
         }
@@ -155,7 +171,8 @@ async function generateDeepQuestions(dreamText, language = "pt") {
                     content: `Você é um terapeuta junguiano. Gere exatamente 6 perguntas profundas de autoconhecimento. Retorne APENAS JSON: { "questions": ["...", "..."] }. Idioma: ${language}`
                 },
                 { role: "user", content: dreamText }
-            ]
+            ],
+            response_format: { type: "json_object" }
         });
         const json = safeJsonParse(response.choices[0].message.content);
         return json.questions || [];
@@ -189,7 +206,8 @@ Idioma: ${language}`
                     content: JSON.stringify({ dreamText, initialInterpretation, userAnswers })
                 }
             ],
-            temperature: 0.7
+            temperature: 0.7,
+            response_format: { type: "json_object" }
         });
         const content = response.choices[0].message.content;
         return safeJsonParse(content);
@@ -225,7 +243,8 @@ Idioma: ${language}`
                 },
                 { role: "user", content: JSON.stringify(dreams) }
             ],
-            temperature: 0.7
+            temperature: 0.7,
+            response_format: { type: "json_object" }
         });
         let result = safeJsonParse(response.choices[0].message.content);
 
