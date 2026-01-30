@@ -119,26 +119,34 @@ app.post("/api/emotional-diagnosis", async (req, res) => {
     }
 });
 
-// ✅ Mensagem do Dia (Oráculo Arquetípico)
+// ✅ Mensagem do Dia (Oráculo Arquetípico) com Personalização
 app.post("/api/daily-message", async (req, res) => {
     try {
-        const { language = "pt" } = req.body;
+        const { language = "pt", dreams, unconsciousMap, userId } = req.body;
         const today = new Date().toDateString();
 
-        // Verifica Cache
-        if (globalDailyCache.date === today && globalDailyCache.oracle) {
-            console.log("[CACHE] Retornando Oráculo do dia já gerado.");
+        // Se NÃO houver contexto (sonhos ou mapa), usamos o Cache Global (App Play Store / Legado)
+        const hasContext = (Array.isArray(dreams) && dreams.length > 0) || (unconsciousMap && typeof unconsciousMap === 'object' && Object.keys(unconsciousMap).length > 0);
+
+        if (!hasContext && globalDailyCache.date === today && globalDailyCache.oracle) {
+            console.log("[CACHE GLOBAL] Retornando Oráculo genérico do dia.");
             return res.json({ success: true, data: globalDailyCache.oracle, message: globalDailyCache.oracle.reflection });
         }
 
         const { generateDailyOracle } = require("./src/services/dreamInterpreter.cjs");
-        const oracle = await generateDailyOracle(language);
 
-        // Atualiza Cache
-        globalDailyCache = {
-            date: today,
-            oracle: oracle
-        };
+        // Se tiver contexto, geramos algo único. Se não, geramos o global e salvamos no cache.
+        const oracle = await generateDailyOracle(language, dreams, unconsciousMap);
+
+        if (!hasContext) {
+            console.log("[CACHE] Atualizando Oráculo global do dia.");
+            globalDailyCache = {
+                date: today,
+                oracle: oracle
+            };
+        } else {
+            console.log(`[PERSONALIZADO] Gerada mensagem única para usuário ${userId || 'guest'}`);
+        }
 
         res.json({ success: true, data: oracle, message: oracle.reflection });
     } catch (e) {

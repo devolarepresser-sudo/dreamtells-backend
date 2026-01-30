@@ -281,11 +281,23 @@ async function analyzeSymbol(symbol, userId, language = "pt") {
 }
 
 // 6. ORÁCULO DIÁRIO (Mensagem do Dia Profunda)
-async function generateDailyOracle(language = "pt") {
+async function generateDailyOracle(language = "pt", dreams = [], unconsciousMap = null) {
     const model = resolveModel();
+    // Construção do contexto de personalização
+    let personalizationContext = "";
+    if (Array.isArray(dreams) && dreams.length > 0) {
+        const summary = dreams.slice(0, 3).map(d => `- ${d.dreamTitle}: ${d.interpretationMain?.substring(0, 150)}...`).join("\n");
+        personalizationContext += `\nSONHOS RECENTES DO USUÁRIO (Use para calibrar a mensagem, mas não de forma óbvia):\n${summary}`;
+    }
+
+    if (unconsciousMap) {
+        personalizationContext += `\nESTADO DE VIDA (Mapa do Inconsciente):\n${JSON.stringify(unconsciousMap)}`;
+    }
+
     const systemPrompt = `Você é um Terapeuta Junguiano e Analista Arquetípico Sênior.
-MISSÃO: Gerar uma "Semente de Sabedoria" para o dia que seja clinicamente útil e transformadora.
-QUALIDADE: Evite clichês gratuitos. O texto deve soar como uma intervenção terapêutica real.
+MISSÃO: Gerar uma "Semente de Sabedoria" para o dia que seja clinicamente útil, transformadora e PROFUNDA.
+QUALIDADE: Evite clichês gratuitos. O texto deve ser longo, denso e soar como uma intervenção terapêutica real.
+${personalizationContext ? "\nPERSONALIZAÇÃO: Use o contexto fornecido para que a mensagem sinta-se feita sob medida para o momento do usuário, mas mantenha o tom universal de sabedoria." : ""}
 
 DIRETRIZES PARA O CONTEÚDO (Obrigatório):
 1. POR QUE: Explique a mecânica psicológica ou o padrão arquetípico por trás do insight.
@@ -294,18 +306,18 @@ DIRETRIZES PARA O CONTEÚDO (Obrigatório):
 
 ESTRUTURA JSON (OBRIGATÓRIO):
 {
-  "title": "Título Oracular",
-  "reflection": "A interpretação psicológica do tema do dia (mínimo 450 caracteres).",
-  "practice": "A instrução específica de 'como' e 'quando' agir hoje.",
-  "archetype": "Arquétipo regente do dia"
+  "title": "Título Oracular Impactante",
+  "reflection": "A interpretação psicológica densa do tema do dia (mínimo 600 e máximo 1000 caracteres). Fale sobre a alma, sobre o que está oculto e sobre a necessidade de movimento real.",
+  "practice": "A instrução específica e profunda de 'como' e 'quando' agir hoje.",
+  "archetype": "Arquétipo regente do momento"
 }
-Idioma: ${language}`;
+Responda em: ${language}`;
 
     try {
         const response = await openaiClient.chat.completions.create({
             model,
             messages: [{ role: "system", content: systemPrompt }],
-            temperature: 0.85,
+            temperature: 0.88,
             response_format: { type: "json_object" }
         });
         return safeJsonParse(response.choices[0].message.content);
@@ -313,8 +325,8 @@ Idioma: ${language}`;
         console.error("Erro generateDailyOracle:", e);
         return {
             title: "O Silêncio Fecundo",
-            reflection: "Às vezes, o crescimento ocorre no escuro, antes que qualquer broto rompa a superfície. Honre a pausa.",
-            practice: "Observe um momento de silêncio antes de falar pela primeira vez hoje.",
+            reflection: "Às vezes, o crescimento ocorre no escuro, antes que qualquer broto rompa a superfície. Honre a pausa e o que está sendo gestado no seu interior agora.",
+            practice: "Observe um momento de silêncio antes de falar pela primeira vez hoje e sinta a direção que sua alma aponta.",
             archetype: "O Eremita"
         };
     }
