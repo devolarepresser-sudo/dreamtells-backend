@@ -97,24 +97,43 @@ app.post("/api/global-analysis", async (req, res) => {
     }
 });
 
-// ✅ Diagnóstico Emocional (Nova Feature)
+// ✅ Diagnóstico Emocional (Nova Feature - Cruzamento Biometria + Sonhos + Mapa)
 app.post("/api/emotional-diagnosis", async (req, res) => {
     try {
-        const body = req.body || {};
+        const { dailyContext, dreams, unconsciousMap, language = "pt", biometricContext } = req.body;
+
+        const systemPrompt = `Você é o MENTOR DREAMTELLS. Você é um analista de alma e biometria.
+Sua missão é gerar um DIAGNÓSTICO EMOCIONAL que una o corpo (biometria), a mente (sonhos) e a vida (mapa).
+
+ESTRUTURA JSON (OBRIGATÓRIO):
+{
+  "phaseTitle": "Título que define o momento",
+  "archetype": "Arquétipo regente (Ex: O Guerreiro Exausto, A Buscadora do Solo Sagrado)",
+  "summary": "Uma verdade cortante sobre o estado emocional atual (2-3 parágrafos).",
+  "mainChallenge": "O 'Elefante na Sala' que a pessoa está evitando enfrentar.",
+  "advice": "Uma direção prática + uma pergunta que force a decisão interna.",
+  "biometricInsight": "Como os dados físicos (sono/eficiência) estão refletidos no psicológico."
+}
+
+CONTEXTO:
+- Biometria: ${JSON.stringify(biometricContext || "Não disponível")}
+- Mapa do Inconsciente: ${JSON.stringify(unconsciousMap || "Não disponível")}
+- Sonhos Recentes: ${JSON.stringify(dreams || [])}
+- Reflexão de hoje: ${dailyContext || "Nenhuma registrada"}
+
+TONALIDADE: Sóbria, honesta, oracular. Responda em: ${language}`;
+
         const response = await openaiClient.chat.completions.create({
             model: process.env.OPENAI_MODEL || "gpt-4o",
-            messages: [
-                { role: "system", content: "Você é um analista emocional. Retorne apenas JSON de diagnóstico conforme o padrão DreamTells." },
-                { role: "user", content: JSON.stringify(body) }
-            ],
-            temperature: 0.7
+            messages: [{ role: "system", content: systemPrompt }],
+            temperature: 0.75,
+            response_format: { type: "json_object" }
         });
+
         const content = response.choices[0].message.content;
-        const firstBrace = content.indexOf("{");
-        const lastBrace = content.lastIndexOf("}");
-        const cleanJson = content.slice(firstBrace, lastBrace + 1);
-        res.json({ success: true, data: JSON.parse(cleanJson) });
+        res.json({ success: true, data: JSON.parse(content) });
     } catch (e) {
+        console.error("[DIAGNOSTIC ERROR]", e.message);
         res.status(500).json({ error: e.message });
     }
 });
