@@ -186,61 +186,53 @@ app.post("/api/audio/transcribe", async (req, res) => {
         console.log('[TRANSCRIBE] Received audio transcription request');
         console.log('[TRANSCRIBE] MimeType:', mimeType);
         console.log('[TRANSCRIBE] Language:', language);
+        console.log('[TRANSCRIBE] Audio base64 length:', audio.length);
 
         // Converter base64 para Buffer
         const audioBuffer = Buffer.from(audio, 'base64');
         console.log('[TRANSCRIBE] Audio buffer size:', audioBuffer.length, 'bytes');
 
+        if (audioBuffer.length === 0) {
+            return res.status(400).json({ error: "Invalid audio data" });
+        }
+
         // Determinar extensão do arquivo baseado no mimeType
-        let fileExtension = 'aac';
+        let fileExtension = 'webm';
         if (mimeType.includes('m4a')) fileExtension = 'm4a';
         else if (mimeType.includes('wav')) fileExtension = 'wav';
         else if (mimeType.includes('mp3')) fileExtension = 'mp3';
-        else if (mimeType.includes('webm')) fileExtension = 'webm';
+        else if (mimeType.includes('aac')) fileExtension = 'aac';
 
         // Salvar temporariamente
         const tmpPath = path.join(__dirname, `temp_audio_${Date.now()}.${fileExtension}`);
         fs.writeFileSync(tmpPath, audioBuffer);
+        console.log('[TRANSCRIBE] Saved temp file:', tmpPath);
 
         try {
-            // Enviar para OpenAI Audio Transcriptions
-            const FormData = require('form-data');
-            const form = new FormData();
-            form.append('file', fs.createReadStream(tmpPath));
-            form.append('model', 'whisper-1'); // ou 'gpt-4o-transcribe' se disponível
-            form.append('language', language === 'pt' ? 'pt' : language);
-
-            const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    ...form.getHeaders(),
-                },
-                body: form,
+            // Usar API do OpenAI client direto (mais confiável)
+            const transcription = await openaiClient.audio.transcriptions.create({
+                file: fs.createReadStream(tmpPath),
+                model: "whisper-1",
+                language: language === 'pt' ? 'pt' : language.substring(0, 2),
             });
-
-            const transcriptionData = await transcriptionResponse.json();
 
             // Limpar arquivo temporário
             fs.unlinkSync(tmpPath);
+            console.log('[TRANSCRIBE] Temp file deleted');
 
-            if (!transcriptionResponse.ok) {
-                console.error('[TRANSCRIBE] OpenAI error:', transcriptionData);
-                throw new Error(transcriptionData.error?.message || 'Transcription failed');
-            }
-
-            console.log('[TRANSCRIBE] Success:', transcriptionData.text);
+            console.log('[TRANSCRIBE] Success:', transcription.text);
 
             res.json({
                 success: true,
-                text: transcriptionData.text || '',
+                text: transcription.text || '',
             });
         } catch (transcribeError) {
             // Limpar arquivo em caso de erro
             if (fs.existsSync(tmpPath)) {
                 fs.unlinkSync(tmpPath);
             }
-            throw transcribeError;
+            console.error('[TRANSCRIBE] OpenAI API Error:', transcribeError.message);
+            throw new Error(`Transcription failed: ${transcribeError.message}`);
         }
     } catch (e) {
         console.error("[TRANSCRIBE ERROR]", e.message);
