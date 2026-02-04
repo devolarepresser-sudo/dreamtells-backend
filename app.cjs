@@ -174,6 +174,80 @@ app.post("/api/daily-message", async (req, res) => {
     }
 });
 
+// ✅ Transcrição de Áudio (OpenAI Audio Transcriptions)
+app.post("/api/audio/transcribe", async (req, res) => {
+    try {
+        const { audio, mimeType = 'audio/aac', language = 'pt' } = req.body;
+
+        if (!audio) {
+            return res.status(400).json({ error: "Audio data is required" });
+        }
+
+        console.log('[TRANSCRIBE] Received audio transcription request');
+        console.log('[TRANSCRIBE] MimeType:', mimeType);
+        console.log('[TRANSCRIBE] Language:', language);
+
+        // Converter base64 para Buffer
+        const audioBuffer = Buffer.from(audio, 'base64');
+        console.log('[TRANSCRIBE] Audio buffer size:', audioBuffer.length, 'bytes');
+
+        // Determinar extensão do arquivo baseado no mimeType
+        let fileExtension = 'aac';
+        if (mimeType.includes('m4a')) fileExtension = 'm4a';
+        else if (mimeType.includes('wav')) fileExtension = 'wav';
+        else if (mimeType.includes('mp3')) fileExtension = 'mp3';
+        else if (mimeType.includes('webm')) fileExtension = 'webm';
+
+        // Salvar temporariamente
+        const tmpPath = path.join(__dirname, `temp_audio_${Date.now()}.${fileExtension}`);
+        fs.writeFileSync(tmpPath, audioBuffer);
+
+        try {
+            // Enviar para OpenAI Audio Transcriptions
+            const FormData = require('form-data');
+            const form = new FormData();
+            form.append('file', fs.createReadStream(tmpPath));
+            form.append('model', 'whisper-1'); // ou 'gpt-4o-transcribe' se disponível
+            form.append('language', language === 'pt' ? 'pt' : language);
+
+            const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    ...form.getHeaders(),
+                },
+                body: form,
+            });
+
+            const transcriptionData = await transcriptionResponse.json();
+
+            // Limpar arquivo temporário
+            fs.unlinkSync(tmpPath);
+
+            if (!transcriptionResponse.ok) {
+                console.error('[TRANSCRIBE] OpenAI error:', transcriptionData);
+                throw new Error(transcriptionData.error?.message || 'Transcription failed');
+            }
+
+            console.log('[TRANSCRIBE] Success:', transcriptionData.text);
+
+            res.json({
+                success: true,
+                text: transcriptionData.text || '',
+            });
+        } catch (transcribeError) {
+            // Limpar arquivo em caso de erro
+            if (fs.existsSync(tmpPath)) {
+                fs.unlinkSync(tmpPath);
+            }
+            throw transcribeError;
+        }
+    } catch (e) {
+        console.error("[TRANSCRIBE ERROR]", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.use("/api/dreams", dreamRoutes);
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true }));
 app.get("/", (req, res) => res.send("DreamTells Backend is running (Robust Version)."));
