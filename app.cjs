@@ -97,75 +97,132 @@ app.post("/api/global-analysis", async (req, res) => {
     }
 });
 
-// ✅ Diagnóstico Emocional (Nova Feature - Cruzamento Biometria + Sonhos + Mapa)
+// ✅ Diagnóstico Emocional (Nova Feature)
 app.post("/api/emotional-diagnosis", async (req, res) => {
     try {
-        const { dailyContext, dreams, unconsciousMap, language = "pt", biometricContext } = req.body;
+        const { dreams = [], userId, language = "pt", dailyContext = "", unconsciousMap = null, biometricContext = null } = req.body;
 
-        const systemPrompt = `Você é o MENTOR DREAMTELLS. Você é um analista de alma e biometria.
-Sua missão é gerar um DIAGNÓSTICO EMOCIONAL que una o corpo (biometria), a mente (sonhos) e a vida (mapa).
+        console.log(`[EMOTIONAL DIAGNOSIS] Request from ${userId} | Dreams: ${dreams.length} | Language: ${language}`);
 
-ESTRUTURA JSON (OBRIGATÓRIO):
+        // Construir contexto rico para o prompt
+        let mapContext = "Não fornecido";
+        if (unconsciousMap) {
+            mapContext = `
+Eixo Identidade: ${unconsciousMap.axisIdentity?.status || 'N/A'}
+Eixo Segurança: ${unconsciousMap.axisSecurity?.status || 'N/A'}
+Eixo Vínculos: ${(unconsciousMap.axisBond?.status || []).join(', ') || 'N/A'}
+Eixo Movimento: ${unconsciousMap.axisMovement?.status || 'N/A'}
+Eixo Desejo: ${unconsciousMap.axisDesire?.status || 'N/A'}
+Eixo Energia: ${unconsciousMap.axisEnergy?.status || 'N/A'}`;
+        }
+
+        let bioContext = "Não sincronizado";
+        if (biometricContext) {
+            bioContext = `
+Sono REM: ${biometricContext.remSleep || 'N/A'}
+Eficiência do Sono: ${biometricContext.efficiency || 'N/A'}
+Insight Biométrico: ${biometricContext.insight || 'N/A'}`;
+        }
+
+        // Extrair textos dos sonhos
+        const dreamTexts = dreams.map((d, i) => {
+            const text = d?.dreamText || d?.text || '';
+            const interp = d?.interpretationMain || d?.interpretation || '';
+            return `Sonho ${i + 1}: ${text}\nInterpretação: ${interp}`;
+        }).join('\n\n');
+
+        // Prompt estruturado
+        const systemPrompt = `Você é um psicanalista sênior especializado em diagnóstico emocional profundo através de sonhos.
+Idioma da resposta: ${language}
+
+Sua tarefa é OBRIGATORIAMENTE retornar um JSON válido (somente JSON, sem markdown) com esta estrutura EXATA:
 {
-  "phaseTitle": "Título que define o momento",
-  "archetype": "Arquétipo regente (Ex: O Guerreiro Exausto, A Buscadora do Solo Sagrado)",
-  "summary": "Uma verdade cortante sobre o estado emocional atual (2-3 parágrafos).",
-  "mainChallenge": "O 'Elefante na Sala' que a pessoa está evitando enfrentar.",
-  "advice": "Uma direção prática + uma pergunta que force a decisão interna.",
-  "biometricInsight": "Como os dados físicos (sono/eficiência) estão refletidos no psicológico."
+  "archetype": "Nome do arquétipo dominante (ex: Guerreiro, Sábio, Explorador, etc)",
+  "summary": "Síntese psicanalítica profunda em 2-3 frases diretas e reveladoras",
+  "mainChallenge": "O desafio central que a pessoa está evitando encarar",
+  "advice": "Uma orientação prática ou pergunta provocadora (não seja didático, seja um espelho)"
 }
 
-CONTEXTO:
-- Biometria: ${JSON.stringify(biometricContext || "Não disponível")}
-- Mapa do Inconsciente: ${JSON.stringify(unconsciousMap || "Não disponível")}
-- Sonhos Recentes: ${JSON.stringify(dreams || [])}
-- Reflexão de hoje: ${dailyContext || "Nenhuma registrada"}
+Seja direto, empático mas provocador. Não use jargões. Fale como se estivesse diante da pessoa.`;
 
-TONALIDADE: Sóbria, honesta, oracular. Responda em: ${language}`;
+        const userPrompt = `CONTEXTO DO MAPA DO INCONSCIENTE:
+${mapContext}
+
+DADOS BIOMÉTRICOS:
+${bioContext}
+
+REFLEXÃO DO DIA:
+${dailyContext || 'Não fornecida'}
+
+SONHOS RECENTES:
+${dreamTexts || 'Nenhum sonho recente registrado'}
+
+Com base nestes dados, qual é o diagnóstico emocional de hoje?`;
 
         const response = await openaiClient.chat.completions.create({
             model: process.env.OPENAI_MODEL || "gpt-4o",
-            messages: [{ role: "system", content: systemPrompt }],
-            temperature: 0.75,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            temperature: 0.8,
             response_format: { type: "json_object" }
         });
 
         const content = response.choices[0].message.content;
-        res.json({ success: true, data: JSON.parse(content) });
+        console.log('[EMOTIONAL DIAGNOSIS] Raw AI Response:', content);
+
+        let diagnosis;
+        try {
+            diagnosis = JSON.parse(content);
+        } catch (parseErr) {
+            // Fallback: tentar extrair JSON do conteúdo
+            const firstBrace = content.indexOf("{");
+            const lastBrace = content.lastIndexOf("}");
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                const cleanJson = content.slice(firstBrace, lastBrace + 1);
+                diagnosis = JSON.parse(cleanJson);
+            } else {
+                throw new Error("AI response was not valid JSON");
+            }
+        }
+
+        // Garantir que os campos esperados existem
+        const result = {
+            archetype: diagnosis.archetype || "Explorador",
+            summary: diagnosis.summary || diagnosis.description || "Análise em andamento",
+            mainChallenge: diagnosis.mainChallenge || diagnosis.challenge || "",
+            advice: diagnosis.advice || diagnosis.guidance || ""
+        };
+
+        console.log('[EMOTIONAL DIAGNOSIS] Success:', result.archetype);
+        res.json({ success: true, data: result });
     } catch (e) {
-        console.error("[DIAGNOSTIC ERROR]", e.message);
+        console.error("[EMOTIONAL DIAGNOSIS ERROR]", e.message);
         res.status(500).json({ error: e.message });
     }
 });
 
-// ✅ Mensagem do Dia (Oráculo Arquetípico) com Personalização
+// ✅ Mensagem do Dia (Oráculo Arquetípico)
 app.post("/api/daily-message", async (req, res) => {
     try {
-        const { language = "pt", dreams, unconsciousMap, userId } = req.body;
+        const { language = "pt" } = req.body;
         const today = new Date().toDateString();
 
-        // Se NÃO houver contexto (sonhos ou mapa), usamos o Cache Global (App Play Store / Legado)
-        const hasContext = (Array.isArray(dreams) && dreams.length > 0) || (unconsciousMap && typeof unconsciousMap === 'object' && Object.keys(unconsciousMap).length > 0);
-
-        if (!hasContext && globalDailyCache.date === today && globalDailyCache.oracle) {
-            console.log("[CACHE GLOBAL] Retornando Oráculo genérico do dia.");
+        // Verifica Cache
+        if (globalDailyCache.date === today && globalDailyCache.oracle) {
+            console.log("[CACHE] Retornando Oráculo do dia já gerado.");
             return res.json({ success: true, data: globalDailyCache.oracle, message: globalDailyCache.oracle.reflection });
         }
 
         const { generateDailyOracle } = require("./src/services/dreamInterpreter.cjs");
+        const oracle = await generateDailyOracle(language);
 
-        // Se tiver contexto, geramos algo único. Se não, geramos o global e salvamos no cache.
-        const oracle = await generateDailyOracle(language, dreams, unconsciousMap);
-
-        if (!hasContext) {
-            console.log("[CACHE] Atualizando Oráculo global do dia.");
-            globalDailyCache = {
-                date: today,
-                oracle: oracle
-            };
-        } else {
-            console.log(`[PERSONALIZADO] Gerada mensagem única para usuário ${userId || 'guest'}`);
-        }
+        // Atualiza Cache
+        globalDailyCache = {
+            date: today,
+            oracle: oracle
+        };
 
         res.json({ success: true, data: oracle, message: oracle.reflection });
     } catch (e) {
@@ -174,64 +231,60 @@ app.post("/api/daily-message", async (req, res) => {
     }
 });
 
-// ✅ Transcrição de Áudio (OpenAI Audio Transcriptions)
+// ✅ Análise de Contexto de Vida (Fix missing route)
+app.post("/api/life-context", async (req, res) => {
+    try {
+        const { lifeText, dreams, language = "pt" } = req.body;
+        const systemPrompt = `Você é um Psicanalista Sênior especializado em sonhos.
+Analise a relação entre o momento de vida do usuário e os temas manifestos nos seus sonhos recentes.
+Idioma da resposta: ${language}`;
+
+        const response = await openaiClient.chat.completions.create({
+            model: process.env.OPENAI_MODEL || "gpt-4o",
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `RELATO VIDA: ${lifeText}\nSONHOS: ${JSON.stringify(dreams || [])}` }
+            ],
+            response_format: { type: "json_object" }
+        });
+
+        res.json(JSON.parse(response.choices[0].message.content));
+    } catch (e) {
+        console.error("[API ERROR] /api/life-context:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ✅ Transcrição de Áudio (Surgical Injection)
 app.post("/api/audio/transcribe", async (req, res) => {
     try {
-        const { audio, mimeType = 'audio/aac', language = 'pt' } = req.body;
+        const { audio, mimeType = 'audio/aac', language = 'pt', prompt } = req.body;
 
-        if (!audio) {
-            return res.status(400).json({ error: "Audio data is required" });
-        }
+        if (!audio) return res.status(400).json({ error: "Audio data is required" });
 
-        console.log('[TRANSCRIBE] Received audio transcription request');
-        console.log('[TRANSCRIBE] MimeType:', mimeType);
-        console.log('[TRANSCRIBE] Language:', language);
-        console.log('[TRANSCRIBE] Audio base64 length:', audio.length);
-
-        // Converter base64 para Buffer
-        const audioBuffer = Buffer.from(audio, 'base64');
-        console.log('[TRANSCRIBE] Audio buffer size:', audioBuffer.length, 'bytes');
-
-        if (audioBuffer.length === 0) {
-            return res.status(400).json({ error: "Invalid audio data" });
-        }
-
-        // Determinar extensão do arquivo baseado no mimeType
+        // Determinar extensão (inclui fix para Android MP4)
         let fileExtension = 'webm';
         if (mimeType.includes('m4a')) fileExtension = 'm4a';
+        else if (mimeType.includes('mp4')) fileExtension = 'mp4';
         else if (mimeType.includes('wav')) fileExtension = 'wav';
         else if (mimeType.includes('mp3')) fileExtension = 'mp3';
         else if (mimeType.includes('aac')) fileExtension = 'aac';
 
-        // Salvar temporariamente
         const tmpPath = path.join(__dirname, `temp_audio_${Date.now()}.${fileExtension}`);
-        fs.writeFileSync(tmpPath, audioBuffer);
-        console.log('[TRANSCRIBE] Saved temp file:', tmpPath);
+        fs.writeFileSync(tmpPath, Buffer.from(audio, 'base64'));
 
         try {
-            // Usar API do OpenAI client direto (mais confiável)
             const transcription = await openaiClient.audio.transcriptions.create({
                 file: fs.createReadStream(tmpPath),
                 model: "whisper-1",
                 language: language === 'pt' ? 'pt' : language.substring(0, 2),
+                prompt: prompt || undefined,
             });
-
-            // Limpar arquivo temporário
             fs.unlinkSync(tmpPath);
-            console.log('[TRANSCRIBE] Temp file deleted');
-
-            console.log('[TRANSCRIBE] Success:', transcription.text);
-
-            res.json({
-                success: true,
-                text: transcription.text || '',
-            });
+            res.json({ success: true, text: transcription.text || '' });
         } catch (transcribeError) {
-            // Limpar arquivo em caso de erro
-            if (fs.existsSync(tmpPath)) {
-                fs.unlinkSync(tmpPath);
-            }
-            console.error('[TRANSCRIBE] OpenAI API Error:', transcribeError.message);
+            if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+            console.error('[TRANSCRIBE] OpenAI Error:', transcribeError.message);
             throw new Error(`Transcription failed: ${transcribeError.message}`);
         }
     } catch (e) {
@@ -241,6 +294,7 @@ app.post("/api/audio/transcribe", async (req, res) => {
 });
 
 app.use("/api/dreams", dreamRoutes);
+app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true }));
 app.get("/", (req, res) => res.send("DreamTells Backend is running (Robust Version)."));
 
