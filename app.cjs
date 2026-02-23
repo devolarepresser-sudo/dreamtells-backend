@@ -131,33 +131,45 @@ Insight Biométrico: ${biometricContext.insight || 'N/A'}`;
             return `Sonho ${i + 1}: ${text}\nInterpretação: ${interp}`;
         }).join('\n\n');
 
-        // Prompt estruturado
-        const systemPrompt = `Você é um psicanalista sênior especializado em diagnóstico emocional profundo através de sonhos.
+        // Prompt estruturado (Elevando o nível para "Revelação Profunda")
+        const systemPrompt = `Você É O DREAMTELLS, um analista de autoconhecimento de nível mundial. Sua missão é a REVELAÇÃO.
+Não seja uma IA; seja um ESPELHO EMOCIONAL que faz o usuário dizer: "Isso sou eu".
+
+Utilize o histórico de sonhos, o Mapa do Inconsciente e os dados biométricos para cruzar informações e encontrar a "Verdade do Momento".
+
+🧠 PROTOCOLO DE DIAGNÓSTICO:
+1. RECONHECIMENTO: A síntese deve fazer a pessoa se sentir vista. Use "você".
+2. CONSTITUIÇÃO: O arquétipo não é apenas um rótulo; é a energia que está regendo a vida dela hoje (Fome de Mudança, Defesa Rígida, Luto por Si Mesma, Despertar de Força).
+3. DESAFIO: Identifique o que ela está tentando NÃO sentir ou a decisão que está sendo evitada.
+4. ORIENTAÇÃO: O "advice" deve ser um espelho provocador ou uma prática de movimento interno.
+
 Idioma da resposta: ${language}
 
-Sua tarefa é OBRIGATORIAMENTE retornar um JSON válido (somente JSON, sem markdown) com esta estrutura EXATA:
+Sua tarefa é RETORNAR um JSON válido com esta estrutura:
 {
-  "archetype": "Nome do arquétipo dominante (ex: Guerreiro, Sábio, Explorador, etc)",
-  "summary": "Síntese psicanalítica profunda em 2-3 frases diretas e reveladoras",
-  "mainChallenge": "O desafio central que a pessoa está evitando encarar",
-  "advice": "Uma orientação prática ou pergunta provocadora (não seja didático, seja um espelho)"
+  "archetype": "Título da Energia Regente (ex: O Vigilante Exausto, A Buscadora da Própria Voz)",
+  "summary": "Síntese psicanalítica profunda em 2-3 frases diretas. Fale sobre o que está por trás do cansaço ou da ansiedade atual.",
+  "mainChallenge": "O conflito central entre o que ela quer e o que ela está fazendo hoje.",
+  "advice": "Uma instrução ou pergunta que a desmonte e a faça agir internamente."
 }
 
-Seja direto, empático mas provocador. Não use jargões. Fale como se estivesse diante da pessoa.`;
+Mantenha o tom sábio, honesto e profundo.`;
 
-        const userPrompt = `CONTEXTO DO MAPA DO INCONSCIENTE:
+        const userPrompt = `SINAIS INTEGRADOS PARA ANÁLISE:
+
+[MAPA DO INCONSCIENTE]
 ${mapContext}
 
-DADOS BIOMÉTRICOS:
+[DADOS DO CORPO/BIOMETRIA]
 ${bioContext}
 
-REFLEXÃO DO DIA:
-${dailyContext || 'Não fornecida'}
+[RELATO DE HOJE]
+${dailyContext || 'Não fornecido'}
 
-SONHOS RECENTES:
+[HISTÓRICO DE SONHOS E INTERPRETAÇÕES RECENTES]
 ${dreamTexts || 'Nenhum sonho recente registrado'}
 
-Com base nestes dados, qual é o diagnóstico emocional de hoje?`;
+Integre essas camadas. O que o corpo, o inconsciente e o cotidiano estão tentando comunicar? Qual é o diagnóstico profundo para hoje?`;
 
         const response = await openaiClient.chat.completions.create({
             model: process.env.OPENAI_MODEL || "gpt-4o",
@@ -167,7 +179,7 @@ Com base nestes dados, qual é o diagnóstico emocional de hoje?`;
             ],
             temperature: 0.8,
             response_format: { type: "json_object" }
-        });
+        }, { timeout: 120000 }); // 2 minutos de timeout interno para a OpenAI
 
         const content = response.choices[0].message.content;
         console.log('[EMOTIONAL DIAGNOSIS] Raw AI Response:', content);
@@ -187,19 +199,26 @@ Com base nestes dados, qual é o diagnóstico emocional de hoje?`;
             }
         }
 
-        // Garantir que os campos esperados existem
-        const result = {
-            archetype: diagnosis.archetype || "Explorador",
-            summary: diagnosis.summary || diagnosis.description || "Análise em andamento",
-            mainChallenge: diagnosis.mainChallenge || diagnosis.challenge || "",
-            advice: diagnosis.advice || diagnosis.guidance || ""
+        // Garantir que os campos esperados existem (Compatibilidade Frontend/Backend)
+        const finalResult = {
+            // Campos esperados pelo Stats.tsx (Frontend)
+            phaseTitle: diagnosis.phaseTitle || diagnosis.archetype || diagnosis.arquétipo || "Explorador",
+            phaseName: diagnosis.phaseName || diagnosis.archetype || diagnosis.arquétipo || "Explorador",
+            description: diagnosis.summary || diagnosis.descrição || diagnosis.description || "Análise concluída",
+
+            // Campos padrão do Backend
+            archetype: diagnosis.archetype || diagnosis.arquétipo || "Explorador",
+            summary: diagnosis.summary || diagnosis.descrição || diagnosis.description || "Análise concluída",
+            mainChallenge: diagnosis.mainChallenge || diagnosis.desafio || diagnosis.challenge || "",
+            advice: diagnosis.advice || diagnosis.conselho || diagnosis.guidance || "",
+            generatedAt: new Date().toISOString()
         };
 
-        console.log('[EMOTIONAL DIAGNOSIS] Success:', result.archetype);
-        res.json({ success: true, data: result });
+        console.log('[EMOTIONAL DIAGNOSIS] Success for user:', userId, 'Archetype:', finalResult.archetype);
+        res.json({ success: true, data: finalResult });
     } catch (e) {
-        console.error("[EMOTIONAL DIAGNOSIS ERROR]", e.message);
-        res.status(500).json({ error: e.message });
+        console.error("[EMOTIONAL DIAGNOSIS ERROR]", e.message, e.stack);
+        res.status(500).json({ error: e.message || "Erro desconhecido no diagnóstico" });
     }
 });
 
